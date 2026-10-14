@@ -18,11 +18,12 @@ from __future__ import annotations
 REWARD_WEIGHTS = {"w_sat": 1.0, "w_eff": 1.0}
 
 # DailyReportData.SAT_W / EFF_W: each satisfaction term is 0.2 of satisfaction, each efficiency
-# term 1/3 of efficiency.
-_SAT_W, _EFF_W = 0.2, 1.0 / 3.0
+# term 0.25 of efficiency (casework became the 4th efficiency pillar in study build 1.0.2).
+_SAT_W, _EFF_W = 0.2, 0.25
 _SAT_TERMS = {"sat_food": "sFood", "sat_lodging": "sLodging", "sat_worker_use": "sWorkerUse",
               "sat_waste": "sWaste", "sat_casework": "sCasework"}
-_EFF_TERMS = {"eff_food": "cFood", "eff_lodging": "cLodging", "eff_worker": "cWorker"}
+_EFF_TERMS = {"eff_food": "cFood", "eff_lodging": "cLodging", "eff_worker": "cWorker",
+              "eff_casework": "cCasework"}
 COMPONENTS = (*_SAT_TERMS, *_EFF_TERMS, "satisfaction", "efficiency", "score")
 
 

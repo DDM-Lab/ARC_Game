@@ -276,7 +276,7 @@ class Fleet:
     Kitchen->Community route was measured at 0 rounds one day and 5 the next.
     """
 
-    __slots__ = ("pos", "busy_seconds", "carrying", "damaged", "spec", "frame", "trip", "events", "aborted",
+    __slots__ = ("pos", "busy_seconds", "carrying", "damaged", "spec", "frame", "trip", "events", "aborted", "stuck",
                  "pauses")
 
     # Kept for callers that reference Fleet.DEPOTS; the live values come from the spec.
@@ -304,6 +304,7 @@ class Fleet:
         self.trip = [None] * n               # per-vehicle in-flight state, see run_round
         self.events = None                   # set to a list to record (frame, kind, veh, id)
         self.aborted = []                    # payloads abandoned by an empty-source load this round
+        self.stuck = []                      # deliveries cancelled INSIDE AssignDeliveryTask (see run_round)
 
     def clone(self):
         f = Fleet.__new__(Fleet)
@@ -317,6 +318,7 @@ class Fleet:
         f.trip = [dict(t) if t else None for t in self.trip]
         f.events = None
         f.aborted = list(self.aborted)
+        f.stuck = list(self.stuck)
         return f
 
     def available(self):
@@ -518,9 +520,16 @@ class Fleet:
                     self.trip[v] = None
                     leg1 = path_length(self.pos[v], src, flooded, self.spec)
                     if leg1 is None:
-                        # No flood-free path to the source: blocked on the dispatch frame.
+                        # No flood-free path to the source: blocked on the dispatch frame. This
+                        # happens INSIDE AssignDeliveryTask, before AssignPendingTasks adds the
+                        # task to activeTasks -- so the cancel finds nothing to remove and the
+                        # dead delivery is then added for good: its quantity stays reserved,
+                        # incoming at the destination and outgoing at the source (MCTS plan 7028
+                        # s24: "100 meals already inbound" for a delivery cancelled the round
+                        # before). A Unity bug the surrogate reproduces because the game has it.
                         self.damaged[v] = True
                         dropped.append((payload, 0))         # never reached the source: nothing aboard
+                        self.stuck.append((payload, qty))
                         ready.remove(v)
                         queue.pop(0)
                         continue
@@ -625,7 +634,7 @@ class Fleet:
             self.frame += self.pauses.pop(0)   # burn the pause: no movement, cadence only
         return landed, queue, dropped
 
-    def run_epilogue(self, flooded=frozenset()):
+    def run_epilogue(self, flooded=frozenset(), load=None):
         """The two paused frames after the round, run by the caller AFTER the round's
         invoke and flood update -- that is when Unity runs them. Returns (landed, dropped).
 
@@ -653,13 +662,26 @@ class Fleet:
                     continue                                   # would need movement
                 ph = t["phase"]
                 if ph == "to_src":
-                    # A vehicle reaching its source on the epilogue frame LOADS AFTER THE
-                    # ADVANCE: 7002 validation, Vehicle3 re-dispatched on the round's last
-                    # pass to a kitchen it was standing on, "loading cargo" logged after
-                    # "Kitchen_14 produced 100 FoodPacks this round", and its destination
-                    # leg unloading at resume + nodes. Leaving `left` at 1 makes the next
-                    # round's first frame -- which runs after this round's production -- do
-                    # the at_src/load, which lands the unload on that same frame.
+                    if "path" not in t or load is None:
+                        # Dispatched while STANDING on its source on the round's last pass: it
+                        # loads after the advance -- 7002 validation, Vehicle3 "loading cargo"
+                        # logged after "Kitchen_14 produced 100 FoodPacks this round", and its
+                        # destination leg unloading at resume + nodes. Leaving `left` at 1
+                        # makes the next round's first frame do the at_src/load.
+                        continue
+                    # A vehicle that DROVE onto its source arrives on the paused frame (+35)
+                    # and LoadCargo runs synchronously there, before this decision's state is
+                    # exported (MCTS plan 7027 s8: Vehicle 4's 31-cell leg from f362 loads at
+                    # f393, Kitchen_11 200 -> 100 in that decision's state).
+                    self.pos[v] = t["src"]
+                    if self.events is not None: self.events.append((self.frame, "at_src", v, t["payload"][0]))
+                    got = load(t["payload"], t["qty"])
+                    if got <= 0:
+                        self.trip[v] = {"race_ready": self.frame + 1}
+                        self.aborted.append(t["payload"])
+                        if self.events is not None: self.events.append((self.frame, "abort", v, t["payload"][0]))
+                        continue
+                    t["phase"], t["left"], t["aboard"] = "boarding", 1, got
                     continue
                 t["left"] = 0
                 if ph == "boarding":
@@ -717,6 +739,27 @@ class Fleet:
             if score > best_score:
                 best, best_score = i, score
         return best
+
+    def stop_flooded(self, flooded) -> list:
+        """FloodTaskGenerator.CheckForBlockedVehicles (OnFloodTileAdded): every vehicle in transit
+        whose current cell is now flooded is stopped where it stands -- the movement check only
+        fires on entering a cell, so a vehicle parked mid-leg at the round boundary is caught by
+        the flood update instead (MCTS plan 7009 s13: Vehicle 3 stopped inside the expansion,
+        before the next tile was added). Returns [(payload, cargo aboard)] like run_round's drops."""
+        dropped = []
+        for v, t in enumerate(self.trip):
+            if not t or t.get("phase") not in ("to_src", "to_dst") or "path" not in t:
+                continue
+            path = t["path"]
+            idx = min(len(path) - 1, max(0, len(path) - t["left"]))
+            if path[idx] in flooded:
+                self.pos[v] = path[idx]
+                self.damaged[v] = True
+                dropped.append((t["payload"], t.get("aboard", t["qty"]) if t["phase"] == "to_dst" else 0))
+                self.carrying[v] = None
+                self.trip[v] = None
+                if self.events is not None: self.events.append((self.frame, "flooded", v, t["payload"][0], path[idx]))
+        return dropped
 
     def repair(self, vehicle):
         """Vehicle.RepairVehicle, reached by answering the repair task flood spawns."""

@@ -52,8 +52,8 @@ STOCHASTIC = {"board", "walks", "fac.pop", "fac.food", "counters.caseworkRequest
 
 
 # DailyReportData's ledger (RewardMetricsTracker export): every input of the score.
-_LEDGER = ("foodPacksConsumed", "foodPacksNeeded", "foodPacksWasted", "lodgingNightsConsumed",
-           "lodgingNightsNeeded", "clientRoundsAwaitingCasework", "clientsRequestedCasework",
+_LEDGER = ("foodPacksConsumed", "foodPacksNeeded", "foodPacksWasted", "lodgingRoundsConsumed",
+           "lodgingRoundsNeeded", "clientsCaseworkSatisfied", "clientsRequestedCasework",
            "idleWorkerRounds", "workingWorkerRounds", "trainingWorkerRounds")
 
 
@@ -89,7 +89,9 @@ def project_unity(after: dict) -> dict:
                       "training": ws.get("untrainedWorkersInTraining")}
     for t in after.get("allActiveTasks") or []:
         title = str(t.get("taskTitle"))
-        key = t.get("stableTaskId") or S.CODE_BUILT_TASKS.get(title, "") or ("Daily_Report" if "Start of Day Report" in title else title)
+        sid = t.get("stableTaskId") or ""
+        sid = "" if sid.startswith("uid-") else sid      # 1.0.2 code-built tasks: map by title
+        key = sid or S.CODE_BUILT_TASKS.get(title, "") or ("Daily_Report" if "Start of Day Report" in title else title)
         fac = str(t.get("affectedFacility"))
         # Global tasks report their targetFacilityType ("Shelter") or "Daily Report" as the
         # facility; the port stores none. Only facility-scoped tasks compare on it.

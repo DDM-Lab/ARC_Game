@@ -1,5 +1,5 @@
 {
- "buildGUID": "e3e29b4542404f96ba71050246ac6c41",
+ "buildGUID": "522060f175f14fa2ae2c27c17e605c4b",
  "buildingWorkforce": [
   {
    "consumptionEnabled": false,
@@ -88,12 +88,10 @@
  },
  "eventOrder": {
   "OnDayChanged": [
+   "MetricsHistoryManager.OnDayChanged",
    "WeatherSystem.OnDayChanged",
-   "MotelCostManager.OnDayChanged",
-   "DailyReportData.OnDayChangedForLodgingNights",
    "WorkerTrainingSystem.OnDayChanged",
    "WorkerRequestSystem.OnDayChanged",
-   "MetricsHistoryManager.OnDayChanged",
    "DeliveryQueuePanel.<SubscribeToEvents>b__14_0",
    "BuildingResourceStorage.OnDayChanged",
    "Vehicle.OnDayChanged",
@@ -109,13 +107,14 @@
    "BudgetAllocationManager.OnRoundEnd",
    "DelayedBudgetManager.AdvanceRound",
    "ClientRelocationHandler.HandleRoundEnd",
+   "MotelCostManager.OnRoundEnd",
    "DailyReportData.AccumulateRoundMetrics",
    "TaskSystem.SweepStalePopulationTasks",
+   "GameLogPanel.CaptureRoundCheckpoint",
    "DeliveryQueuePanel.HandleQueueChanged",
    "BuildingStatusTableUI.RefreshAllRows"
   ],
   "OnSimulationEnded": [
-   "MotelCostManager.OnSimulationEnded",
    "FirstDayTutorialManager.OnSimulationEnded",
    "FloodSystem.OnSimulationEnded",
    "SimulationPauseUI.OnSimulationEnded",
@@ -130,6 +129,7 @@
    "BuildingResourceStorage.OnSimulationEndedCheckEndOfDayWaste"
   ],
   "OnTimeSegmentChanged": [
+   "MetricsHistoryManager.OnRoundChanged",
    "DailyReportData.CaptureRound3FoodNeed",
    "FirstDayTutorialManager.OnRoundChanged",
    "FloodSystem.OnTimeSegmentChanged",
@@ -138,7 +138,6 @@
    "TaskSystem.OnRoundChanged",
    "WeatherReportSystem.OnTimeSegmentChanged",
    "CommunityFoodDepletionManager.OnRoundChanged",
-   "MetricsHistoryManager.OnRoundChanged",
    "ToastManager.OnRoundChanged",
    "BuildingResourceStorage.OnRoundChanged",
    "BuildingResourceStorage.OnRoundChanged",
@@ -201,7 +200,7 @@
   "residentsPerCommunity": 400,
   "roundsPerDay": 4,
   "satisfaction": 0,
-  "satisfactionPerTrainedWorker": 2,
+  "satisfactionPerTrainedWorker": 0,
   "shelterFloodComparison": "AtMost",
   "shelterFloodRadius": 4,
   "shelterFloodThreshold": 1,
@@ -281,7 +280,7 @@
    "fillFoodToCapacityDaily": false,
    "foodCapacity": 0,
    "foodPerPersonPerNRounds": 1,
-   "populationCapacity": 400,
+   "populationCapacity": 50,
    "startingFoodPacks": 0,
    "workersConsumeFoodToo": false
   },

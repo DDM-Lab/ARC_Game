@@ -7,7 +7,16 @@ A capture (oracle/sim/capture.py) is ~2 MB of raw state and log. A fixture keeps
   expected     per decision, Unity's state projected to the canonical observation
                (obs_diff.project_unity: budget, satisfaction, score, facilities, workers,
                board, walks, counters)
+and, for captures that record their tool calls (every capture on the decision clock):
+  calls        per decision, the tool calls the policy or plan MADE
+  outcomes     per decision, what Unity did with each: [tool, args, executed|refused|invalid]
+  final_score  Unity's score at the end
 so tests/test_surrogate_parity.py can replay every fixture in seconds with no Unity.
+
+Replaying `taken` (check) cannot see a call Unity REFUSED that the port would accept: the port is
+fed Unity's outcome. Replaying `calls` (check_calls) goes through cora.executor as search and RL
+do, so a refusal the port is missing shows up as a differing outcome -- how the missing
+all-or-nothing relocation gate was found (MCTS plans 7000-7002, 2026-10-13).
 
     python -m oracle.sim.parity oracle/sim/runs/v6_explore05 [more capture dirs ...]
         -> tests/fixtures/sim_parity/<policy>_<seed>.json.gz
@@ -41,7 +50,21 @@ def make_fixture(capture_json: str) -> dict:
             "steps": [{"taken": with_facility(s), **({"decision": s["decision"]} if "decision" in s else {})}
                       for s in trace],
             "rng": [rng.get(i + 1) for i in range(len(trace))],
-            "expected": [project_unity(s["after"]) for s in trace]}
+            "expected": [project_unity(s["after"]) for s in trace],
+            **_recorded_calls(trace)}
+
+
+def _recorded_calls(trace) -> dict:
+    """The capture's own tool calls per decision, Unity's outcome for each, and its final score
+    ({} for older captures, which record no calls)."""
+    turns = {s["decision"]: s.get("calls") for s in trace if s.get("decision") is not None}
+    if not turns or any(v is None for v in turns.values()):
+        return {}
+    from cora.scoring import score_components
+    order = sorted(turns)
+    return {"calls": [[[c["tool"], c["args"]] for c in turns[d]] for d in order],
+            "outcomes": [[[c["tool"], c["args"], c["status"]] for c in turns[d]] for d in order],
+            "final_score": round(score_components(trace[-1]["after"].get("rewardMetrics"))["score"], 4)}
 
 
 def replay(fixture: dict):
@@ -84,6 +107,47 @@ def check(fixture: dict) -> list:
     return out
 
 
+def check_calls(fixture: dict) -> list:
+    """[(decision, what differs)] for a fixture with recorded calls: the calls replayed through
+    cora.executor on SimEnv must meet Unity's outcome call for call, then match Unity's budget,
+    satisfaction and score (what search and RL read) at the end of every decision, and end on
+    Unity's score. The rest of the projection is check()'s job."""
+    from cora import executor
+    from cora.scoring import score_components
+    from oracle.rollout import DECISIONS
+    from oracle.sim.env import SimEnv
+    from oracle.sim.obs_diff import diff, project_port
+    # Unity's state at the last stop of each decision: an end-of-day stop (decision None) runs
+    # inside the env step of the decision before it.
+    last_stop = {}
+    for i, st in enumerate(fixture["steps"]):
+        if st.get("decision") is not None:
+            cur = st["decision"]
+        last_stop[cur] = i
+    env = SimEnv(seed=fixture["seed"], max_episode_steps=DECISIONS + 4, manual_transfers=False)
+    env.reset()
+    for d, (turn, want) in enumerate(zip(fixture["calls"], fixture["outcomes"])):
+        res, (_, _, term, trunc, _) = executor.execute_turn(env, [tuple(c) for c in turn])
+        got = [[r.tool, r.args, r.status] for r in res]
+        if _keyed(got) != _keyed(want):
+            return [(d, [f"{w[0]} {w[1]}: Unity {w[2]}, port {g[2]}"
+                         for w, g in zip(_keyed(want), _keyed(got)) if w != g] or ["call outcomes"])]
+        state = [f for f, _a, _b in diff(_canonical(fixture["expected"][last_stop[d]]),
+                                          _canonical(project_port(env.world)))
+                 if f in ("budget", "satisfaction", "score")]
+        if state:
+            return [(d, state)]
+        if term or trunc:
+            break
+    score = round(score_components(env.game_state.get("rewardMetrics"))["score"], 4)
+    return [] if score == fixture["final_score"] else [(d, [f"score Unity {fixture['final_score']}, port {score}"])]
+
+
+def _keyed(outcomes) -> list:
+    """Outcomes in a stable order: calls run in the executor's fixed ORDER, not as written."""
+    return sorted(([t, json.dumps(a, sort_keys=True), st] for t, a, st in outcomes), key=lambda x: x[:2])
+
+
 def _label(source: str) -> str:
     """'policy:combined+explore(eps=0.05,seed=3)' -> 'combined-explore05'; 'noop' -> 'noop';
     a --calls plan '.../mcts_5503.json' -> 'plan-mcts'."""
@@ -112,7 +176,8 @@ def main(argv):
             name = fixture_name(fx.get("source"), fx["seed"], fx["clock"]) + ".json.gz"
             with gzip.open(os.path.join(FIXTURES, name), "wt") as f:
                 json.dump(fx, f, separators=(",", ":"))
-            print(f"{name}: {len(fx['steps'])} Unity stops, {len(check(fx))} differing")
+            calls = f", calls {len(check_calls(fx))} differing" if "calls" in fx else ""
+            print(f"{name}: {len(fx['steps'])} Unity stops, {len(check(fx))} differing{calls}")
     return 0
 
 

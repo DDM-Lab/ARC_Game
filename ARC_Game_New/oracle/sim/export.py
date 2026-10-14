@@ -283,7 +283,11 @@ def _task(w, tid, task):
             "immediateDelivery": bool(c.get("immediateDelivery")) if delivers else False,
             "triggersDelivery": bool(c.get("triggersDelivery")) if delivers else False,
             "feasible": True, "unavailableReason": ""})
-    return {"taskId": tid, "stableTaskId": def_id if def_id in S._TASK_SPEC and def_id not in S.CODE_BUILT_TASKS.values() else "",
+    # 1.0.2: a task ClientStayTracker builds in code carries "uid-" + its uid, which equals its
+    # taskId in a fresh game process (both counters advance per task); other code-built tasks "".
+    stable = (f"uid-{tid}" if def_id == S.CODE_BUILT_TASKS["Casework Request"]
+              else def_id if def_id in S._TASK_SPEC and def_id not in S.CODE_BUILT_TASKS.values() else "")
+    return {"taskId": tid, "stableTaskId": stable,
             "taskTitle": _resolve(title, plain, food_amount, pop_amount),
             "taskDescription": _resolve(desc, plain, food_amount, pop_amount),
             "taskType": spec.get("taskType") or task.task_type,

@@ -206,6 +206,27 @@ def build(dirs):
             print(name)
 
 
+def test_staffing_a_building_being_torn_down():
+    """Unity's ExecuteAssignment checks only that the building exists, and the executor runs
+    deconstruct before staff, so a building torn down and staffed in one turn holds its workers
+    (counted working, status still Deconstructing) until it is destroyed, which frees them.
+    The port refused that assignment and then dropped the rest of the turn (MCTS plan 7000)."""
+    from oracle.sim.economy import Economy, STATUS_DECONSTRUCTING
+    e = Economy(free_trained=0, free_untrained=8, prebuilts=False)
+    assert e.build("CaseworkSite", 1)
+    i = e.index_of(e.buildings[-1]["name"])
+    while e.buildings[i]["status"] != "NeedWorker":
+        e.tick_construction()
+    assert e.deconstruct(i)
+    assert e.staff(i, count=4)
+    b = e.buildings[i]
+    assert (b["status"], b["assigned"], e.free_untrained, e.working_untrained) == (STATUS_DECONSTRUCTING, 4, 4, 4)
+    while not b.get("destroyed"):
+        e.tick_construction()
+    e.destroy_pending()
+    assert (e.free_untrained, e.working_untrained, e.buildings) == (8, 0, [])
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "build":
         sys.path.insert(0, os.path.dirname(HERE))

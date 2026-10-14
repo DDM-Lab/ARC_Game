@@ -144,16 +144,24 @@ _STORAGE_KEYS = (("startingFoodPacks", "startingFoodPacks", 0),
 
 def _cost_minimums() -> dict:
     """DailyReportData's cost-efficiency minimums: a kitchen's cost over its packs for the
-    productive days, a shelter's over its nights, an untrained worker's over the productive
-    rounds (GetFoodCostMin / GetLodgingCostMin / GetWorkerCostMin)."""
+    productive days, a shelter's over its bed-rounds (per ROUND since 1.0.2), an untrained
+    worker's over the productive rounds, a casework site's over the most clients one site can
+    serve (GetFoodCostMin / GetLodgingCostMin / GetWorkerCostMin / GetCaseworkCostMin)."""
     init = C.get("initial_state") or {}
     days = max(1, int(init.get("days", 8)) - 1)
+    rounds = days * max(1, int(init.get("roundsPerDay", 4)))
     store = C.get("storage_by_type") or {}
     kitchen = int((store.get("Kitchen") or {}).get("foodCapacity") or 0)
     shelter = int((store.get("Shelter") or {}).get("populationCapacity") or 0)
+    # Casework: capacity + departuresPerRound x (R - 3w + 1) clients per site, w the walk.
+    cw = store.get("CaseworkSite") or {}
+    walk = max(1, int(C.get("relocation_delay_rounds") or 2))
+    cw_clients = (int(cw.get("populationCapacity") or 0)
+                  + int(cw.get("caseworkDeparturesPerRound") or 0) * max(0, rounds - 3 * walk + 1))
     return {"food": C["build_cost"]["Kitchen"] / (kitchen * days) if kitchen else None,
-            "lodging": C["build_cost"]["Shelter"] / (shelter * days) if shelter else None,
-            "worker": C["untrained_cost"] / (days * int(init.get("roundsPerDay", 4)))}
+            "lodging": C["build_cost"]["Shelter"] / (shelter * rounds) if shelter else None,
+            "worker": C["untrained_cost"] / rounds,
+            "casework": C["build_cost"]["CaseworkSite"] / cw_clients if cw_clients > 0 else None}
 
 
 def _storage_by_type(d):
@@ -197,7 +205,8 @@ class Economy:
 
     __slots__ = ("rounds_since_consumption", "budget", "satisfaction", "counters",
                  "free_trained", "free_untrained", "working_trained", "working_untrained",
-                 "in_training", "arriving", "under_construction", "buildings", "motel_pop",
+                 "in_training", "arriving", "under_construction", "buildings", "motel_pop", "motel_unbilled",
+                 "assigned_at", "food_credit_pending",
                  "pending_transfers", "pending_budget", "used_sites", "efficiency", "report",
                  "name_counts", "built")
 
@@ -270,9 +279,15 @@ class Economy:
         self.efficiency = 0.0
         self.name_counts = {}        # BuildingSystem.buildingNameCounters: per type, never reused
         self.built = {}              # every building ever built: name -> (type, site)
-        # (RecordInitialWorkerImputedCost runs in DailyReportData.Start, before GameDataManager
-        # has loaded, so the starting roster is imputed at $0 -- the log never shows its message.)
+        self.motel_unbilled = 0.0    # MotelCostManager.unbilledFraction
+        self.assigned_at = {}        # WorkerAssignmentTracker: site id -> (day, segment) last staffed
+        self.food_credit_pending = 0 # community packs stored at +35 whose "used" credit lands at +36
         self.report = Report(_cost_minimums())
+        # DailyReportData.RecordInitialWorkerImputedCost (1.0.2) charges the starting roster
+        # ($6,500 at 5 + 5) to the budget and to the worker cost the score reads -- once per
+        # PROCESS, before the gym's episode reset restores both. In an env-driven game neither
+        # moves: budget 8000 and C_Worker at its minimum (1.0.2 captures, 2026-10-13; a bare
+        # process start does show budget 1500). So the port imputes nothing.
         self.counters["totalWorkers"] = self.total_workers()
 
     def apply_choice(self, task_tag: str, impacts, budget_delay_rounds: int = 0,
@@ -302,8 +317,7 @@ class Economy:
                             self.report.lodging_spent(self, -value)
                 elif value > 0:
                     self.pending_budget.append([int(budget_delay_rounds), int(value)])
-            elif kind == "Satisfaction":
-                self.add_satisfaction(float(value))
+            # (1.0.2 removed a choice's Satisfaction impact: the score alone moves satisfaction.)
 
         # A choice that routes people to the Motel is the single largest cost driver in the
         # game, and it does NOT show up in the choice's own impacts: the money arrives later
@@ -328,6 +342,9 @@ class Economy:
         # population and food. Every exactness test steps fresh worlds; only search clones.
         e.buildings = [{**b, "resources": dict(b.get("resources") or {})} for b in self.buildings]
         e.motel_pop = self.motel_pop
+        e.motel_unbilled = self.motel_unbilled
+        e.assigned_at = dict(self.assigned_at)
+        e.food_credit_pending = self.food_credit_pending
         e.rounds_since_consumption = self.rounds_since_consumption
         e.pending_transfers = list(self.pending_transfers)
         e.pending_budget = [list(x) for x in self.pending_budget]
@@ -343,11 +360,19 @@ class Economy:
         """SatisfactionAndBudget.AddSatisfaction: unclamped on this build (ledger D13)."""
         self.satisfaction = f32(self.satisfaction + float(delta))       # stored as float32, as in Unity
 
-    def bill_motel(self, residents: int) -> None:
-        """MotelCostManager: residents x the nightly rate, a lodging cost."""
-        cost = int(residents * C["motel_per_person_per_day"])
-        self.spend(cost, "lodging")
-        self.report.lodging_spent(self, cost)
+    def bill_motel(self, residents: int, rounds_per_day: int) -> None:
+        """MotelCostManager.ChargeMotelCost, every OnRoundEnd since 1.0.2: residents x the daily
+        rate / roundsPerDay. The budget loses whole dollars, carrying the fraction to the next
+        round; the lodging score takes the exact float."""
+        if residents <= 0:
+            return
+        total = f32(residents * f32(C["motel_per_person_per_day"] / max(1, rounds_per_day)))
+        owed = f32(total + self.motel_unbilled)
+        billed = int(owed // 1)
+        self.motel_unbilled = f32(owed - billed)
+        if billed > 0:
+            self.spend(billed, "lodging")
+        self.report.lodging_spent(self, total)
 
     def spend(self, amount: int, category: str) -> None:
         """SatisfactionAndBudget.RemoveBudget(amount, SpendCategory).
@@ -395,6 +420,8 @@ class Economy:
             self.report.food_spent(self, cost)
         elif building_type == "Shelter":
             self.report.lodging_spent(self, cost)
+        elif building_type == "CaseworkSite":
+            self.report.casework_spent(self, cost)       # RecordCaseworkSpendCumulative (1.0.2)
         # site_id rides along so the finished building knows WHERE it is: delivery time
         # is the drive to it, and without a location it falls back to a fitted constant.
         # The building EXISTS from this round -- Unity's facility list carries it as
@@ -571,25 +598,19 @@ class Economy:
         starts a feeding cycle on the same segment advance, a generation pass that finds it)."""
         gone = [b for b in self.buildings if b.get("destroyed")]
         for b in gone:
+            # Workers staffed onto it after deconstruction started go back to the pool.
+            self.free_trained += b.get("trained", 0)
+            self.free_untrained += b.get("untrained", 0)
+            self.working_trained -= b.get("trained", 0)
+            self.working_untrained -= b.get("untrained", 0)
             self.buildings.remove(b)
             self.used_sites.discard(b.get("site_id"))
         return [b["name"] for b in gone]
 
     def on_day_end(self, day: int) -> None:
-        """Day rollover: motel billing, worker arrivals, training completion.
-
-        Motel billing is where 89-97% of spend goes in practice, at $200 per resident per
-        day, charged on the day change for the day that just ended. It is also the reason
-        an unused shelter is actively expensive: the residents keep billing."""
+        """Day rollover: worker arrivals, training completion. (The Motel bills every round
+        since 1.0.2 -- sim._round_end.)"""
         self.daily_food_reset()
-        # MotelCostManager bills the Motel's ACTUAL occupancy. `motel_pop` is a legacy
-        # shadow of that number left over from the vehicle-era transfer path, and it is
-        # still incremented per queued transfer in economy_step -- so `A or B` billed a
-        # phantom 400 residents ($80,000) on 5802's day-3 rollover with the Motel empty,
-        # because an empty motel makes the left operand falsy rather than absent.
-        residents = self.motel_population
-        if residents > 0:
-            self.bill_motel(residents)
         for entry in self.arriving:
             entry[0] -= 1
         for days, kind in [e for e in self.arriving if e[0] <= 0]:
@@ -599,14 +620,8 @@ class Economy:
                 self.free_untrained += 1
         self.arriving = [e for e in self.arriving if e[0] > 0]
         self.in_training = [d - 1 for d in self.in_training]
-        # WorkerTrainingSystem.CompleteTraining grants satisfactionPerTrainedWorker (scene: 2)
-        # for every worker that finishes -- "Satisfaction: 87 -> 91 (+4.0) - Completed training
-        # 2 workers" on seed 6001, a gain the port never made.
+        # (1.0.2 removed CompleteTraining's satisfactionPerTrainedWorker bonus.)
         done = sum(1 for d in self.in_training if d <= 0)
-        if done:
-            per = float((C.get("initial_state") or {}).get("satisfactionPerTrainedWorker", 0) or 0)
-            if per:
-                self.add_satisfaction(done * per)
         self.free_trained += done
         self.in_training = [d for d in self.in_training if d > 0]
         self.counters["daysCompleted"] = day
@@ -671,7 +686,7 @@ class Economy:
         res["population"] = pop + delta
         return delta
 
-    def add_food(self, name, amount, round_key=None) -> int:
+    def add_food(self, name, amount, round_key=None, credit=True) -> int:
         """Deliver food packs (BuildingResourceStorage.AddResource): stored up to capacity, and
         every arrival pays the facility's outstanding feeding-cycle need down at once
         (ReconcileFoodAgainstOutstandingNeed). Returns the packs stored."""
@@ -685,7 +700,12 @@ class Economy:
         res["foodPacks"] = (res.get("foodPacks") or 0) + moved
         if moved > 0:
             if b.get("type") == "Community":
-                self.report.food(self, consumed=moved)     # RecordCommunityFoodUsedToday
+                # RecordCommunityFoodUsedToday runs at the delivery's COMPLETION (OnVehicle-
+                # DeliveryCompleted), one frame after the unload; `credit=False` parks it.
+                if credit:
+                    self.report.food(self, consumed=moved)
+                else:
+                    self.food_credit_pending += moved
             _reconcile_food(self, b)
         return moved
 
@@ -716,10 +736,17 @@ class Economy:
 
         UnderConstruction cannot be staffed -- Building.UpdateWorkerStatus only runs on
         NeedWorker and InUse. Trying anyway is a silent no-op in Unity, which is exactly
-        the kind of action a planner should never waste a turn slot on."""
+        the kind of action a planner should never waste a turn slot on.
+
+        A Deconstructing building CAN: ActionExecutor.ExecuteAssignment checks only that the
+        building exists, so staffing one the same turn it was torn down (the executor runs
+        deconstruct before staff) assigns the workers -- counted working, status unchanged --
+        until it is destroyed (MCTS plan 7000, 2026-10-13: Casework Foxtrot "Deconstructing
+        4/4" in Unity, refused by the port)."""
         if not (0 <= index < len(self.buildings)):
             return False
-        return self.buildings[index]["status"] in (STATUS_NEED_WORKER, STATUS_IN_USE)
+        return self.buildings[index]["status"] in (STATUS_NEED_WORKER, STATUS_IN_USE,
+                                                   STATUS_DECONSTRUCTING)
 
     def index_of(self, name):
         for i, b in enumerate(self.buildings):
@@ -783,7 +810,7 @@ class Economy:
         b["untrained"] += untrained
         b["assigned"] = (b["trained"] * WORKFORCE_VALUE["trained"]
                          + b["untrained"] * WORKFORCE_VALUE["untrained"])
-        if b["assigned"] >= REQUIRED_WORKFORCE:
+        if b["assigned"] >= REQUIRED_WORKFORCE and b["status"] != STATUS_DECONSTRUCTING:
             b["status"] = STATUS_IN_USE
         return True
 

@@ -49,7 +49,9 @@ def with_facility(step) -> list:
 
     def fill(a):
         t = tasks.get(a.get("taskId")) or {}
-        sid = a.get("stableTaskId") or sim.CODE_BUILT_TASKS.get(str(t.get("taskTitle")), "")
+        sid = a.get("stableTaskId") or ""
+        if not sid or sid.startswith("uid-"):         # built in code (1.0.2: "uid-N"): by title
+            sid = sim.CODE_BUILT_TASKS.get(str(t.get("taskTitle")), "")
         out = dict(a, facility=a.get("facility", str(t.get("affectedFacility") or "")), stableTaskId=sid)
         desc = str(t.get("taskDescription") or "")
         if "|CLIENT_GROUP_ID:" in desc:

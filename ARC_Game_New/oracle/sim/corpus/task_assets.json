@@ -66,7 +66,7 @@
    "requireFullQuantity": 0
   },
   "2": {
-   "costPerUnit": 10,
+   "costPerUnit": 72,
    "deliveryCargoType": 1,
    "enableMultipleDeliveries": 0,
    "prioritizeNearestSource": 0,
@@ -105,14 +105,14 @@
    "requireFullQuantity": 1
   },
   "2": {
-   "costPerUnit": 10,
+   "costPerUnit": 72,
    "deliveryCargoType": 1,
    "enableMultipleDeliveries": 0,
    "prioritizeNearestSource": 0,
    "requireFullQuantity": 0
   },
   "3": {
-   "costPerUnit": 10,
+   "costPerUnit": 72,
    "deliveryCargoType": 1,
    "enableMultipleDeliveries": 0,
    "prioritizeNearestSource": 0,
@@ -128,7 +128,7 @@
    "requireFullQuantity": 0
   },
   "2": {
-   "costPerUnit": 10,
+   "costPerUnit": 72,
    "deliveryCargoType": 1,
    "enableMultipleDeliveries": 0,
    "prioritizeNearestSource": 0,
@@ -163,14 +163,14 @@
    "requireFullQuantity": 1
   },
   "2": {
-   "costPerUnit": 10,
+   "costPerUnit": 72,
    "deliveryCargoType": 1,
    "enableMultipleDeliveries": 0,
    "prioritizeNearestSource": 0,
    "requireFullQuantity": 0
   },
   "3": {
-   "costPerUnit": 10,
+   "costPerUnit": 72,
    "deliveryCargoType": 1,
    "enableMultipleDeliveries": 0,
    "prioritizeNearestSource": 0,
@@ -186,7 +186,7 @@
    "requireFullQuantity": 0
   },
   "2": {
-   "costPerUnit": 10,
+   "costPerUnit": 72,
    "deliveryCargoType": 1,
    "enableMultipleDeliveries": 0,
    "prioritizeNearestSource": 0,

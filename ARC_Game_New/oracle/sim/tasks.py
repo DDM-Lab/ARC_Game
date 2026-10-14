@@ -132,8 +132,8 @@ class TaskBoard:
     """Active tasks plus in-flight deliveries."""
 
     __slots__ = ("_late_arrivals", "active", "deliveries", "next_id", "awaiting", "has_supplier",
-                 "_sources", "queue", "busy", "fleet", "cell_for", "repair_for", "on_blocked", "orphaned",
-                 "retry_if_unsourced", "source_transform", "pending", "pending_seq", "flooded")
+                 "_sources", "queue", "busy", "fleet", "cell_for", "repair_for", "on_blocked", "on_completed", "orphaned",
+                 "retry_if_unsourced", "source_transform", "pending", "pending_seq", "flooded", "stuck")
 
     def __init__(self, has_supplier=None, cell_for=None):
         self.active = {}                    # task_id -> Task
@@ -169,6 +169,7 @@ class TaskBoard:
         self.retry_if_unsourced = None
         self.source_transform = None        # facility name -> transform, for vehicle scoring
         self.on_blocked = None      # World hook: a dropped delivery spawns a Road Blockage task
+        self.on_completed = None    # World hook: TaskSystem.CompleteTask's SweepStalePopulationTasks
         self.orphaned = set()       # task ids with a trip abandoned by an empty-source abort
         # Orders waiting for a vehicle, exactly DeliverySystem.pendingTasks. Entries are
         # [seq, (task_id, quantity, destination), src_cell, dst_cell, quantity], sorted by
@@ -177,6 +178,7 @@ class TaskBoard:
         self._late_arrivals = []           # epilogue unloads parked until settle_late()
         self.pending_seq = 0
         self.flooded = frozenset()
+        self.stuck = []                     # [(payload, qty)] dead deliveries Unity keeps reserving
 
     def clone(self):
         b = TaskBoard.__new__(TaskBoard)
@@ -195,9 +197,11 @@ class TaskBoard:
         b.retry_if_unsourced = self.retry_if_unsourced
         b.source_transform = self.source_transform
         b.on_blocked = self.on_blocked
+        b.on_completed = self.on_completed
         b.orphaned = set(self.orphaned)
         b.pending = [list(x) for x in self.pending]
         b.pending_seq = self.pending_seq
+        b.stuck = list(self.stuck)
         b.flooded = self.flooded
         return b
 
@@ -260,7 +264,6 @@ class TaskBoard:
 
 
     REPAIR_COST = 1200          # AgentChoice(1, "Repair immediately ($1200)")
-    REPAIR_DELAY_SATISFACTION = -5   # AgentChoice(2, "Delay repair ...")
     REPAIR_ROUNDS = 2           # repairTask.roundsRemaining
 
     def open_repair_task(self, vehicle):
@@ -350,6 +353,8 @@ class TaskBoard:
             add(payload[2], qty)
         for load in self._dispatched():
             add(load[2], load[1])
+        for payload, qty in self.stuck:
+            add(payload[2], qty)
         return out
 
     def inbound_to(self, destination):
@@ -591,6 +596,30 @@ class TaskBoard:
             counters["lodgingFulfilled"] += fulfilled_add
         task.resolved = True
 
+    def handle_dropped(self, dropped, counters: dict) -> None:
+        """Deliveries a flood stopped: [(payload, cargo aboard)], from the fleet's movement
+        (run_round) or from a flood tile landing on a vehicle (sim._stop_flooded_vehicles)."""
+        for _payload, _loaded in dropped:
+            # Vehicle.StopVehicleDueToFlood, in its order: TriggerRoadBlockageTask --
+            # HandleDeliveryFailure on the parent (InProgress -> Incomplete, its demand recorded
+            # as resolved-unfulfilled through RecordTaskResolution), then CreateRoadBlockageTask
+            # (on_blocked: food cargo discarded and an Alert, people returned and the Road
+            # Blockage Emergency); TriggerVehicleRepairTask, which is a no-op on this build (the
+            # vehicle is restored when the flood clears, sim._restore_vehicles); then the
+            # delivery is CANCELLED, not completed (OnDeliveryCancelled -> OnDeliveryTaskCancelled
+            # finds the parent no longer InProgress), so nothing is credited late. 5513 MCTS
+            # plan, s18: Vehicle 4 with no flood-free path to Kitchen_9 -> task 54 resolved
+            # Incomplete, "Delivery Blocked by Flood" for Shelter_10, no repair task.
+            # `_loaded` is the cargo aboard (0 when the vehicle had not loaded).
+            _tid = _payload[0]
+            task = self.active.pop(_tid, None) or self.awaiting.pop(_tid, None)
+            was_open = task is not None and not task.resolved
+            if was_open:
+                self.resolve(task, fulfilled=False, counters=counters)
+            if self.on_blocked is not None:
+                self.on_blocked(_payload, _loaded, task, was_open)
+            self._sources.pop(_tid, None)
+
     def late_delivery(self, task: Task, quantity: int, counters: dict) -> None:
         """AddLateDelivery / AddLateFoodTask -- a delivery that lands after resolution.
 
@@ -670,41 +699,24 @@ class TaskBoard:
             if self.retry_if_unsourced is None:
                 return qty
             task = self.active.get(payload[0]) or self.awaiting.get(payload[0])
-            return qty if task is None else self.retry_if_unsourced(task, qty, payload)
+            return self.retry_if_unsourced(task, qty, payload, task_id=payload[0])
 
         if _settling:
             arrived, dropped = list(_settling), []
         elif _epilogue:
-            arrived, dropped = self.fleet.run_epilogue(self.flooded)
+            arrived, dropped = self.fleet.run_epilogue(self.flooded, _load)
+            for _p in self.fleet.aborted:
+                self.orphaned.add(_p[0])
+            self.fleet.aborted = []
         else:
             arrived, self.pending, dropped = self.fleet.run_round(self.pending, self.flooded, _load,
                                                                   self._source_pos)
             for _p in self.fleet.aborted:
                 self.orphaned.add(_p[0])
             self.fleet.aborted = []
-        # A vehicle stopped by flood spawns its repair task, which is why Unity answers
-        # "Vehicle Repair Required" at round 6 and the port did not. Without it the port's
-        # fleet never recovers on Unity's schedule.
-        for _payload, _loaded in dropped:
-            # Vehicle.StopVehicleDueToFlood, in its order: TriggerRoadBlockageTask --
-            # HandleDeliveryFailure on the parent (InProgress -> Incomplete, its demand recorded
-            # as resolved-unfulfilled through RecordTaskResolution), then CreateRoadBlockageTask
-            # (on_blocked: food cargo discarded and an Alert, people returned and the Road
-            # Blockage Emergency); TriggerVehicleRepairTask, which is a no-op on this build (the
-            # vehicle is restored when the flood clears, sim._restore_vehicles); then the
-            # delivery is CANCELLED, not completed (OnDeliveryCancelled -> OnDeliveryTaskCancelled
-            # finds the parent no longer InProgress), so nothing is credited late. 5513 MCTS
-            # plan, s18: Vehicle 4 with no flood-free path to Kitchen_9 -> task 54 resolved
-            # Incomplete, "Delivery Blocked by Flood" for Shelter_10, no repair task.
-            # `_loaded` is the cargo aboard (0 when the vehicle had not loaded).
-            _tid = _payload[0]
-            task = self.active.pop(_tid, None) or self.awaiting.pop(_tid, None)
-            was_open = task is not None and not task.resolved
-            if was_open:
-                self.resolve(task, fulfilled=False, counters=counters)
-            if self.on_blocked is not None:
-                self.on_blocked(_payload, _loaded, task, was_open)
-            self._sources.pop(_tid, None)
+            self.stuck.extend(self.fleet.stuck)
+            self.fleet.stuck = []
+        self.handle_dropped(dropped, counters)
         # A SIBLING THAT LANDS ON THE LAST FRAME KEEPS THE PARENT OPEN. `arrived` is settled
         # after run_round with the fleet as it stands at the END of the round, so an earlier
         # trip's `_trips_outstanding` already sees a sibling that unloaded on frame 34 at
@@ -763,6 +775,8 @@ class TaskBoard:
                 task = self.active.get(task_id) or self.awaiting.pop(task_id, None)
                 if task is not None and task_id not in self.active and not task.resolved:
                     self.resolve(task, fulfilled=task.delivered > 0, counters=counters)
+                    if self.on_completed is not None:
+                        self.on_completed()
                 continue
             task = self.active.get(task_id) or (
                 self.awaiting.get(task_id) if (self._trips_outstanding(task_id) or _split_later.get(task_id, 0) > 0)
@@ -802,8 +816,11 @@ class TaskBoard:
                                   else (task_id, quantity, destination))
             if (task_id not in self.active and not task.resolved
                     and not self._trips_outstanding(task_id) and _split_later.get(task_id, 0) <= 0):
-                # AreAllLinkedDeliveriesComplete: the parent completes with its LAST trip.
+                # AreAllLinkedDeliveriesComplete: the parent completes with its LAST trip, and
+                # CompleteTask sweeps every other open task against the live state at once.
                 self.resolve(task, fulfilled=task.delivered > 0, counters=counters)
+                if self.on_completed is not None:
+                    self.on_completed()
         while self.queue and self.busy < VEHICLE_COUNT:
             task_id, qty, lat = self.queue.pop(0)
             self.deliveries.append([lat, task_id, qty, True])

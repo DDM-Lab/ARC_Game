@@ -155,7 +155,7 @@ def _is_edge(p, fs: FloodState):
 
 
 def update_flood(fs: FloodState, fmap: FloodMap, rng, weather: str,
-                 rain_intensity: float, marks=None, stats=None) -> None:
+                 rain_intensity: float, marks=None, stats=None, on_added=None) -> None:
     """One round of flood evolution. Mirrors UpdateFlood's branch structure exactly --
     including which branches are SKIPPED, since a skipped branch draws nothing.
 
@@ -163,7 +163,11 @@ def update_flood(fs: FloodState, fmap: FloodMap, rng, weather: str,
     off by default and exist so the equivalence test can compare against the numbers
     Unity prints in its own Debug.Log, not just against the final tile set. Matching
     totals with mismatched phases is a real failure mode -- an over-count in expansion
-    can hide under an over-count in shrinkage."""
+    can hide under an over-count in shrinkage.
+
+    `on_added(tiles)` runs at every expansion that adds a NEW tile -- AddFloodTile's
+    OnFloodTileAdded, which the river spawn suppresses (triggerEvents: false) -- with the tile
+    set as it stands at that moment, mid-update."""
     expansion_rate, spread_mult, shrink_chance = C["weather"].get(
         weather, C["weather"].get("Sunny", (0.0, 0.5, 0.3)))
 
@@ -215,8 +219,11 @@ def update_flood(fs: FloodState, fmap: FloodMap, rng, weather: str,
             if marks is not None:
                 marks.append("draw:Flood.2")
             idx = rng.range_int(0, len(candidates))
+            new = candidates[idx] not in fs.tiles
             fs.tiles.add(candidates[idx])
             candidates.pop(idx)
+            if new and on_added is not None:
+                on_added(fs.tiles)
             if stats is not None:
                 stats["expansions"] = stats.get("expansions", 0) + 1
 
@@ -237,7 +244,10 @@ def update_flood(fs: FloodState, fmap: FloodMap, rng, weather: str,
             sx, sy = unpack(src)
             target = pack(sx + dx * dist, sy + dy * dist)
             if _can_spread_to(target, fs, fmap, rng, thr, marks):
+                new = target not in fs.tiles
                 fs.tiles.add(target)
+                if new and on_added is not None:
+                    on_added(fs.tiles)
 
     # ── shrinkage (Flood.7: one draw per flood tile) ────────────────────────────────
     do_shrink = rain_intensity < C["min_rain"] or shrink_chance > 0
