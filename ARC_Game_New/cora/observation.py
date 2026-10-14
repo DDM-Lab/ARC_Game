@@ -109,6 +109,8 @@ def _tasks(gs, facs, config):
                 o["impacts"] = {i["type"]: i["value"] for i in c["impacts"]}
             if config.mark_unavailable_choices and c.get("feasible") is False:
                 o["unavailable"] = (c.get("unavailableReason") or "cannot be carried out right now")[:140]
+            if config.officer_extras and c.get("displayIndex"):
+                o["screen"] = c["displayIndex"]       # the card's place in the player's panel
             choices.append(o)
         td = {"taskId": t["taskId"], "type": t["taskType"], "title": t["taskTitle"],
               "roundsLeft": t.get("roundsRemaining"), "choices": choices}
@@ -244,8 +246,38 @@ def _add_officer_extras(obs, gs):
                             "cap": pop.get(n, (None, None))[1], "walks": walks.get(n, [])}
                            for n, q in incoming.items()]
         obs.pop("walking", None)
+    # Where people can be relocated to right now, by the game's own rule
+    # (ClientRelocationHandler.GetDestinationsSorted): a shelter only while InUse (fully staffed),
+    # the motel always; free = capacity - population - people already on their way. The facility
+    # rows' pop/cap alone overstated room (playtest 2026-10-07: "Only N of N clients could be
+    # placed" on shelters that read as half empty).
+    lodging = []
+    for f in facs:
+        if f.get("buildingType") not in ("Shelter", "Motel"):
+            continue
+        room = max(0, (f.get("populationCapacity") or 0) - (f.get("currentPopulation") or 0)
+                   - (f.get("incomingPopulation") or 0))
+        status = f.get("buildingStatus")
+        accepting = f.get("buildingType") == "Motel" or status == "InUse"
+        lodging.append({"name": names.get(f.get("facilityName"), f.get("facilityName")), "free": room,
+                        "accepting": accepting, "status": status})
+    if lodging:
+        obs["lodging"] = lodging
     if gs.get("pendingEffects"):
         obs["pending"] = gs["pendingEffects"]
+    # Food already on the road (vehicles), by destination: part of "already on the way".
+    transit = {}
+    for d in (gs.get("logistics") or {}).get("activeDeliveries") or []:
+        if "food" in str(d.get("cargoType", "")).lower():
+            dest = names.get(d.get("destination"), d.get("destination"))
+            transit[dest] = transit.get(dest, 0) + (d.get("quantity") or 0)
+    if transit:
+        obs["foodInTransit"] = transit
+    rm = gs.get("rewardMetrics") or {}
+    if rm.get("scoreAvailable"):
+        obs["scoreParts"] = {k: rm.get(k) for k in ("sFood", "sLodging", "sWorkerUse", "sWaste", "sCasework",
+                                                     "cFood", "cLodging", "cWorker", "cCasework", "liveSatisfaction",
+                                                     "liveEfficiency")}
     # Distance from every open site to every landmark (each community and the motel).
     landmarks = [(f.get("facilityName"), _pos(f.get("position"))) for f in facs
                  if str(f.get("buildingType", "")).lower() in ("community", "motel") and _pos(f.get("position"))]
@@ -372,7 +404,8 @@ def _task_lines(obs):
             imp = ch.get("impacts")
             imps = (" " + " ".join(f"[{k} {v}]" for k, v in imp.items())) if imp else ""
             na = f" — UNAVAILABLE now: {ch['unavailable']}" if ch.get("unavailable") else ""
-            L.append(f"    {ch.get('choiceId')}: {ch.get('text')}{imps}{na}")
+            screen = f" (option {ch['screen']} on screen)" if ch.get("screen") else ""
+            L.append(f"    {ch.get('choiceId')}{screen}: {ch.get('text')}{imps}{na}")
     return L
 
 
@@ -416,6 +449,13 @@ def _officer_extra_lines(obs):
                     if i.get("pop") is not None and i.get("cap") else "")
             parts.append(f"{i['name']} +{i['n']} ({src}{room})")
         L.append("incoming (counted against free space): " + "; ".join(parts))
+    if obs.get("lodging"):
+        open_ = [f"{l['name']} {l['free']} free" for l in obs["lodging"] if l["accepting"]]
+        closed = [f"{l['name']} ({l['status'] or 'not ready'})" for l in obs["lodging"] if not l["accepting"]]
+        line = "room to relocate people into now: " + ("; ".join(open_) if open_ else "none")
+        if closed:
+            line += " | not taking people until fully staffed: " + ", ".join(closed)
+        L.append(line + " (a relocation needs room for everyone it sends; a flooded route can still block a walk)")
     if obs.get("pending"):
         # Identical effects (same kind and timing) are grouped into one line.
         grouped, order = {}, []
@@ -444,20 +484,42 @@ def _officer_extra_lines(obs):
             elif k == "construction":
                 names = [t for t in p.get("_targets") or [p.get("target")] if t]
                 parts.append(f"{', '.join(names)} finish{'es' if len(names) == 1 else ''} construction {when}")
+        for dest, q in (obs.get("foodInTransit") or {}).items():
+            parts.append(f"{q} food on the road to {dest}")
         if parts:
-            L.append("pending: " + "; ".join(parts))
+            L.append("already on the way (approved or requested earlier; these are NOT open tasks, "
+                     "do not request or fund them again): " + "; ".join(parts))
+    elif obs.get("foodInTransit"):
+        L.append("already on the way (requested earlier; NOT open tasks): " + "; ".join(
+            f"{q} food on the road to {d}" for d, q in obs["foodInTransit"].items()))
     if obs.get("siteDistances"):
         L.append("open sites by map distance (closest first): " + "; ".join(
             f"{sid}: " + " ".join(f"{n.replace('Community ', '')} {round(d)}" for n, d in sorted(ds, key=lambda x: x[1]))
             for sid, ds in obs["siteDistances"]))
     if obs.get("motelPerPersonPerDay"):
-        L.append(f"motel: ${obs['motelPerPersonPerDay']} per person per day")
+        d = obs["motelPerPersonPerDay"]
+        L.append(f"motel: ${d} per person per day, billed every round (${d / 4:g} per person per round)")
+    sp = obs.get("scoreParts")
+    if sp:
+        f2 = lambda v: f"{(v or 0):.2f}"
+        sat = {"food": sp.get("sFood"), "lodging": sp.get("sLodging"), "workers in use": sp.get("sWorkerUse"),
+               "waste": sp.get("sWaste"), "casework": sp.get("sCasework")}
+        eff = {"food": sp.get("cFood"), "lodging": sp.get("cLodging"), "workers": sp.get("cWorker"),
+               "casework": sp.get("cCasework")}
+        L.append(f"score so far: satisfaction {round(sp.get('liveSatisfaction') or 0)} + efficiency "
+                 f"{round(sp.get('liveEfficiency') or 0)} (out of 1000 each). Satisfaction parts, 0-1, "
+                 f"each a fifth of satisfaction: " + ", ".join(f"{k} {f2(v)}" for k, v in sat.items())
+                 + "; cost-efficiency parts, 0-1, each a quarter of efficiency: "
+                 + ", ".join(f"{k} {f2(v)}" for k, v in eff.items()) + ".")
     for r in (obs.get("dailyReports") or [])[-2:]:
         sc = r.get("satisfactionChange") or 0
+        eaten = (f" needed {r.get('foodNeeded')} eaten {r.get('foodConsumed')}"
+                 if r.get("foodConsumed") is not None and "foodNeeded" in r else "")
         L.append(
             f"day {r.get('day')} report: tasks {r.get('completedTasks')}/{r.get('totalTasks')} done, "
             f"{r.get('expiredTasks')} expired; food made {r.get('foodProduced')} delivered "
-            f"{r.get('foodDelivered')} wasted {r.get('foodWasted')}; shelter occupancy "
+            f"{r.get('foodDelivered')}{eaten} wasted {r.get('foodWasted')} (all food left at day's end, "
+            f"kitchens included); shelter occupancy "
             f"{round((r.get('shelterOccupancyRate') or 0) * 100)}%; idle workers {r.get('idleWorkers')}; "
             f"budget {int(r.get('startingBudget') or 0)} -> {int(r.get('endingBudget') or 0)} "
             f"(spent {int(r.get('budgetSpent') or 0)}, received {int(r.get('budgetReceived') or 0)}); "

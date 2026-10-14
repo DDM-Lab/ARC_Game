@@ -42,7 +42,7 @@ router/                  GUI officers (python -m router):
   session.py             Session: one connected game (composes the mixins below)
   unity_io.py            commits actions and task answers to the client; latest game state
   officer_loop.py        each officer's turn: messages, transcript, roster, hooks
-  officer_tools.py       tool dispatch; action calls through cora.executor; action menu; ledger
+  officer_tools.py       tool dispatch; action calls through cora.executor; action menu
   proposals.py           propose_choices cards and the Director's pick
   standing_orders.py     add_to_autonomy_list
   messaging.py           Director <-> officer messages

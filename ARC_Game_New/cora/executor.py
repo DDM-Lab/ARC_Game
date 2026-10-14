@@ -45,7 +45,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Optional
 
-from cora.actions import assignment_action, staffing_need
+from cora.actions import assignment_action, staff_plan, staffing_need
 from cora.observation import task_token
 
 ORDER = {"task": 0, "deconstruct": 1, "build": 2, "hire": 3, "train": 4, "staff": 5, "transfer": 6}
@@ -132,6 +132,8 @@ class TurnResolver:
         self.free_tr = wf.get("freeTrainedWorkers", 0) or 0
         self.free_un = wf.get("freeUntrainedWorkers", 0) or 0
         self.sites_taken = set()            # build sites claimed by earlier calls this turn
+        self.facilities = {f["facilityName"]: f for f in (self.gs.get("mapState", {}) or {}).get("facilities", []) or []
+                           if f.get("facilityName")}
         self.need = {f["facilityName"]: staffing_need(f)
                      for f in (self.gs.get("mapState", {}) or {}).get("facilities", []) or []
                      if f.get("facilityName") and staffing_need(f) > 0}
@@ -192,18 +194,16 @@ class TurnResolver:
         if 0 < n < need:
             raise ValueError(f"{match} needs {need} workforce units and only runs fully staffed; "
                              f"count={n} would be partial")
-        if self.free_units < need:
-            raise ValueError(f"{match} needs {need} workforce units but only {self.free_units} are free "
-                             f"({self.free_tr} trained, {self.free_un} untrained)")
-        # Worker COUNT for the executor, which assigns trained-first from the free pool.
-        use_tr = min(self.free_tr, -(-need // 2))
-        use_un = max(0, need - use_tr * 2)
-        if use_un > self.free_un:
+        plan = staff_plan(self.facilities[match], self.free_tr, self.free_un)
+        if plan is None:
             raise ValueError(f"{match} needs {need} workforce units; {self.free_tr} trained and "
-                             f"{self.free_un} untrained free cannot make that up")
-        qty = use_tr + use_un
+                             f"{self.free_un} untrained free cannot make that up exactly "
+                             f"(trained = 2 units, untrained = 1)")
+        qty, use_tr, use_un = plan
         self.actions.append(assignment_action(match, qty, need=need))
-        self.free_tr -= use_tr; self.free_un -= use_un; self.need[match] = 0
+        self.free_tr -= use_tr
+        self.free_un -= max(0, use_un - (self.facilities[match].get("assignedWorkforce", 0) or 0))
+        self.need[match] = 0
         r.action_indices = [len(self.actions) - 1]; r.summary = f"staff {match} ({need} units)"
 
     def deconstruct(self, r, site):

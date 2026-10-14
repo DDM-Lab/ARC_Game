@@ -60,9 +60,13 @@ class UnityIOMixin:
                 "success": result_msg.get("success", False),
                 "error_message": result_msg.get("error_message", ""),
             }
-            # Update game state from result
+            # Unity's reply carries no state; re-read it after anything that took effect, so the
+            # next item, the officer's "Updated actions" and every getter see the world the human
+            # sees (it is not frozen while paused: builds, hires and spend apply at once).
             if "game_state" in result_msg:
                 game_state = result_msg["game_state"]
+            elif result["success"]:
+                game_state = await self._fetch_fresh_state() or game_state
         else:
             print(f"[router]   ⚠️  Timeout executing action {action.get('action_id', 'unknown')}")
             result = {
@@ -147,12 +151,13 @@ class UnityIOMixin:
             return None
 
         def _tid_for_stable(state, stable):
+            # stableTaskId is the task TEMPLATE's id, shared by every live instance of it (e.g.
+            # all food requests): it identifies a task only when exactly one matches.
             if not stable:
                 return None
-            for t in (state.get("allActiveTasks") or []):
-                if t.get("stableTaskId") == stable:
-                    return t.get("taskId")
-            return None
+            hits = [t.get("taskId") for t in (state.get("allActiveTasks") or [])
+                    if t.get("stableTaskId") == stable]
+            return hits[0] if len(hits) == 1 else None
 
         # Stable id comes from the task row the caller resolved `task_id` against.
         src_task = _find_by_tid(game_state, task_id)
@@ -211,6 +216,8 @@ class UnityIOMixin:
 
         if result_msg is not None and "game_state" in result_msg:
             game_state = result_msg["game_state"]
+        elif result_msg is not None and result_msg.get("success"):
+            game_state = await self._fetch_fresh_state() or game_state
         self._publish_state(game_state)
         return (result_msg or {"success": False,
                                "error_message": "Timeout selecting task choice"}), game_state

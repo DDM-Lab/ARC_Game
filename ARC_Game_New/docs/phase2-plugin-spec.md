@@ -54,7 +54,7 @@ offline one is `plugin_api.MockToolContext`.
 - `await ctx.execute(calls)` — `calls` is `[(tool, args), ...]` or `[{"tool": ..., "args": ...}]`
   of the action tools in `cora/tools.py`, e.g. `[("hire", {"kind": "untrained", "count": 4})]`.
   Runs through `Session._execute_calls`, the same path as the officer's own action calls
-  (`cora.executor`, scope, ledger, logging). Returns a `ToolResult` with the per-call outcomes as
+  (`cora.executor`, scope, logging). Returns a `ToolResult` with the per-call outcomes as
   text and the executed count.
 - `await ctx.propose_choices(packages)` — the same path as the `propose_choices` tool; packages are
   `{label, calls: [{tool, args}], description?}`.

@@ -1099,38 +1099,76 @@ public class TaskDetailUI : MonoBehaviour
         }
     }
 
+    /// <summary>The officer conversation panel's confirm (a human action outside this panel).</summary>
     public bool TryConfirmTask(GameTask task, AgentChoice choice, out string errorMessage)
     {
-        errorMessage = null;
-        currentTask = task;
-        selectedChoice = choice;
-        numericalInputs.Clear();
-        foreach (var input in task.numericalInputs)
-            numericalInputs[input.inputId] = input;
+        bool ok = ResolveChoice(task, choice, fromThisPanel: false, out errorMessage);
+        if (ok && choice != null && (choice.triggersDelivery || choice.immediateDelivery || choice.enableMultipleDeliveries))
+            ToastManager.ShowToast($"Delivery for task '{task.ResolvePlaceholders(task.taskTitle, plainFacilityName: true)}' is added to queue.", ToastType.Info, true);
+        return ok;
+    }
 
-        // Re-check live state right before acting, not just when the panel was opened — the
-        // facility this task depends on may have been drained by a different task confirmed while
-        // this panel sat open (see TaskSystem.RefreshTaskAgainstLiveState). If that auto-resolves
-        // the task, its own popup already explains why — don't also try to execute a dead choice.
-        if (TaskSystem.Instance != null && !TaskSystem.Instance.RefreshTaskAgainstLiveState(task))
+    /// <summary>
+    /// ONE way to answer a task, for every actor: this panel's Confirm (human), the officer
+    /// conversation panel (human), and the agent path (websocket officers and the gym/benchmark,
+    /// via SelectTaskChoiceHeadless). Order: TaskSystem.CanAnswer (the shared answered-once
+    /// ledger) -> RefreshTaskAgainstLiveState -> ValidateBeforeConfirm -> CompleteTaskAction.
+    ///
+    /// Only the detail panel's own Confirm (fromThisPanel) runs on the panel's state. Any other
+    /// caller borrows the panel's fields for the call and puts the human's back afterwards: they
+    /// used to be overwritten, so a human with a panel open could end up confirming the task an
+    /// agent had just answered (or failed to answer).
+    /// </summary>
+    public bool ResolveChoice(GameTask task, AgentChoice choice, bool fromThisPanel, out string failReason)
+    {
+        failReason = null;
+        if (TaskSystem.Instance == null) { failReason = "TaskSystem not ready"; return false; }
+        if (!TaskSystem.Instance.CanAnswer(task, out failReason)) return false;
+
+        GameTask humanTask = currentTask;
+        AgentChoice humanChoice = selectedChoice;
+        var humanInputs = new Dictionary<int, AgentNumericalInput>(numericalInputs);
+        bool panelOpen = taskDetailPanel != null && taskDetailPanel.activeInHierarchy;
+        if (!fromThisPanel)
         {
-            errorMessage = "This task is no longer needed and has been automatically closed — see the popup for details.";
-            return false;
+            currentTask = task;
+            selectedChoice = choice;
+            numericalInputs.Clear();
+            foreach (var input in task.numericalInputs)
+                numericalInputs[input.inputId] = input;
         }
 
-        // Same gate every other confirm path uses (expiry, numerical inputs, delivery
-        // feasibility, worker rules, budget) — this used to be reimplemented here as a partial
-        // subset that skipped delivery/worker/budget validation entirely, so an agent-conversation
-        // confirm (the only caller of TryConfirmTask) could queue a delivery — e.g. relocating a
-        // community to a Shelter with no capacity — that the UI's own validation text already
-        // correctly flagged as invalid. SelectTaskChoiceHeadless and OnConfirmButtonClicked already
-        // call ValidateBeforeConfirm for exactly this reason; this brings TryConfirmTask in line.
-        if (!ValidateBeforeConfirm(task, choice, out errorMessage))
-            return false;
-
-        if (choice != null && (choice.triggersDelivery || choice.immediateDelivery || choice.enableMultipleDeliveries))
-            ToastManager.ShowToast($"Delivery for task '{task.ResolvePlaceholders(task.taskTitle, plainFacilityName: true)}' is added to queue.", ToastType.Info, true);
-        return CompleteTaskAction(out errorMessage);
+        bool ok = false;
+        try
+        {
+            // Re-check live state right before acting, not just when the panel was opened — the
+            // facility this task depends on may have been drained by a different task confirmed
+            // meanwhile. If that auto-resolves the task, its own popup already explains why.
+            if (!TaskSystem.Instance.RefreshTaskAgainstLiveState(task))
+            {
+                failReason = "This task is no longer needed and has been automatically closed.";
+                return false;
+            }
+            // Same gate for every actor: expiry, numerical inputs, delivery feasibility, worker
+            // rules, budget.
+            if (!ValidateBeforeConfirm(task, choice, out failReason))
+                return false;
+            ok = CompleteTaskAction(out failReason, closePanel: fromThisPanel);
+            return ok;
+        }
+        finally
+        {
+            if (!fromThisPanel)
+            {
+                bool humanWasOnThisTask = panelOpen && humanTask == task;
+                currentTask = humanTask;
+                selectedChoice = humanChoice;
+                numericalInputs = humanInputs;
+                // The human was looking at the task someone else just answered: close it.
+                if (ok && humanWasOnThisTask)
+                    CloseTaskDetail();
+            }
+        }
     }
 
     void OnConfirmButtonClicked()
@@ -1143,17 +1181,8 @@ public class TaskDetailUI : MonoBehaviour
                 : $"task={currentTask.taskTitle} | choice=none",
             ledgerSeq: -1, taskDecisionId: currentTask.stableTaskId);
 
-        string validationError;
-        if (!ValidateBeforeConfirm(currentTask, selectedChoice, out validationError))
-        {
-            ShowAgentErrorMessage(validationError);
-            return;
-        }
-
-        // Re-check live state right before acting — same reasoning as TryConfirmTask. If this
-        // auto-resolves the task, ResolveTaskClientsAlreadyRelocated already showed the explanatory
-        // popup, so just close this panel on it instead of also raising a redundant error.
-        if (!TaskSystem.Instance.RefreshTaskAgainstLiveState(currentTask))
+        // Auto-resolved by live state (RefreshTaskAgainstLiveState's popup explains why): close.
+        if (TaskSystem.Instance.CanAnswer(currentTask, out _) && !TaskSystem.Instance.RefreshTaskAgainstLiveState(currentTask))
         {
             CloseTaskDetail();
             FindObjectOfType<TaskCenterNotification>()?.RefreshNotification();
@@ -1161,69 +1190,32 @@ public class TaskDetailUI : MonoBehaviour
             return;
         }
 
-        if (currentTask.agentChoices != null && currentTask.agentChoices.Count > 0 && selectedChoice == null)
+        AgentChoice confirming = selectedChoice;
+        GameTask confirmingTask = currentTask;
+        string why;
+        if (!ResolveChoice(currentTask, selectedChoice, fromThisPanel: true, out why))
         {
-            ShowAgentErrorMessage("Please select a choice before confirming.");
+            ShowAgentErrorMessage(why);
             return;
         }
-
-        // Validate numerical inputs before proceeding
-        string numericalValidationError;
-        if (!ValidateNumericalInputs(out numericalValidationError))
-        {
-            ShowAgentErrorMessage(numericalValidationError);
-            return;
-        }
-
-        // Validate selected choice if it involves any type of delivery
-        if (selectedChoice != null && (selectedChoice.triggersDelivery || selectedChoice.immediateDelivery || selectedChoice.enableMultipleDeliveries))
-            ToastManager.ShowToast($"Delivery for '{currentTask.ResolvePlaceholders(currentTask.taskTitle, plainFacilityName: true)}' queued.", ToastType.Info, true);
-
-        // Check if this is the first time confirming a task
-        /*if (FirstTimeActionTracker.Instance != null && FirstTimeActionTracker.Instance.IsFirstTaskConfirm())
-        {
-            if (ConfirmationPopup.Instance != null)
-            {
-                ConfirmationPopup.Instance.ShowPopup(
-                    message: "Once confirmed, this decision is irreversible. Are you sure you want to proceed? (This is a one-time tutorial prompt)",
-                    onConfirm: () => {
-                        FirstTimeActionTracker.Instance.MarkTaskConfirmCompleted();
-                        string why;
-        if (!CompleteTaskAction(out why))
-            ShowAgentErrorMessage($"Action Aborted: {why}");
-                    },
-                    title: "Confirm Task Decision"
-                );
-                return;
-            }
-        }*/
-        CompleteTaskAction();
+        if (confirming != null && (confirming.triggersDelivery || confirming.immediateDelivery || confirming.enableMultipleDeliveries))
+            ToastManager.ShowToast($"Delivery for '{confirmingTask.ResolvePlaceholders(confirmingTask.taskTitle, plainFacilityName: true)}' queued.", ToastType.Info, true);
 
     }
 
-    // The actual task completion logic
-    // Returns true if the task action was completed; false if it was rejected before
-    // taking effect (e.g. the chosen option's immediate cost exceeds the budget under
-    // the no-debt policy). On rejection nothing is applied and the task stays open.
-// Inside TaskDetailUI.cs
-
-private bool CompleteTaskAction()
-{
-    return CompleteTaskAction(out _);
-}
-
+// The task completion logic every actor shares (reached only through ResolveChoice).
 // Returns true if the action took effect. On false NOTHING was applied (no impacts, no status
-// change) and failReason says why.
+// change) and failReason says why. closePanel: only the detail panel's own Confirm closes it.
 // Resolution = the player's decision for this task. Its ledger entries are written only after
 // CompleteTaskActionCore has applied the effects, so a state delta attached to them includes
 // what the decision did. Records are built BEFORE the core runs, because the core closes the
 // panel and clears the selection this reads from.
-private bool CompleteTaskAction(out string failReason)
+private bool CompleteTaskAction(out string failReason, bool closePanel)
 {
     var resolution = BuildResolutionRecords();
     // Captured before Core runs: it closes the panel and clears currentTask/selectedChoice.
     string taskDecisionId = currentTask?.stableTaskId;
-    bool applied = CompleteTaskActionCore(out failReason);
+    bool applied = CompleteTaskActionCore(out failReason, closePanel);
     if (applied)
         foreach (var r in resolution)
         {
@@ -1270,19 +1262,15 @@ private List<(string type, JsonObj target, JsonObj parameters, string summary)> 
     return records;
 }
 
-private bool CompleteTaskActionCore(out string failReason)
+private bool CompleteTaskActionCore(out string failReason, bool closePanel)
 {
     failReason = null;
-    Debug.Log("Complete task action called!");
 
     if (currentTask != null && currentTask.taskId == -1 && currentTask.multiAgentProposal != null)
     {
         HandleMultiAgentChoiceSelection();
         return true;
     }
-
-    if (selectedChoice != null)
-        currentTask.selectedChoiceId = selectedChoice.choiceId;
 
     if (selectedChoice != null)
     {
@@ -1292,16 +1280,6 @@ private bool CompleteTaskActionCore(out string failReason)
         {
             failReason = $"insufficient budget (option costs ${cost:N0}, budget is ${SatisfactionAndBudget.Instance.GetCurrentBudget():N0})";
             return false;
-        }
-
-        // Handle Budget Delays (display mirror; the credit itself is scheduled by ApplyChoiceImpacts)
-        if (selectedChoice.budgetDelayRounds > 0)
-        {
-            var budgetImpact = selectedChoice.choiceImpacts.FirstOrDefault(i => i.impactType == ImpactType.Budget);
-            if (budgetImpact != null && budgetImpact.value != 0)
-            {
-                DelayedBudgetManager.Instance?.AddDelayedBudget(currentTask.taskTitle, budgetImpact.value, selectedChoice.budgetDelayRounds);
-            }
         }
 
         if (selectedChoice.immediateDelivery)
@@ -1323,11 +1301,15 @@ private bool CompleteTaskActionCore(out string failReason)
             // delivery that never moved — and, because ApplyChoiceImpacts then runs
             // unconditionally, prices it differently from the queued path.
             bool success = ExecuteGeneratorDelivery(selectedChoice, immediate: true) != 0;
-            if (success)
+            if (!success)
             {
-                ApplyChoiceImpacts(selectedChoice, resolvedQuantity);
-                TaskSystem.Instance.CompleteTask(currentTask);
+                failReason = "the delivery could not be carried out (nothing was moved)";
+                return false;
             }
+            currentTask.selectedChoiceId = selectedChoice.choiceId;
+            MirrorDelayedBudget(currentTask, selectedChoice);
+            ApplyChoiceImpacts(selectedChoice, resolvedQuantity);
+            TaskSystem.Instance.CompleteTask(currentTask);
         }
         else if (selectedChoice.triggersDelivery || selectedChoice.enableMultipleDeliveries)
         {
@@ -1335,11 +1317,19 @@ private bool CompleteTaskActionCore(out string failReason)
             // task asset sets it without triggersDelivery — so this covers the same choices, and
             // removes a second `else if (triggersDelivery)` below that could never be reached.
             bool success = ExecuteGeneratorDelivery(selectedChoice, immediate: false) != 0;
-            if (success)
-                ApplyChoiceImpacts(selectedChoice);
+            if (!success)
+            {
+                failReason = "the delivery could not be queued (no route, source or room)";
+                return false;
+            }
+            currentTask.selectedChoiceId = selectedChoice.choiceId;
+            MirrorDelayedBudget(currentTask, selectedChoice);
+            ApplyChoiceImpacts(selectedChoice);
         }
         else
         {
+            currentTask.selectedChoiceId = selectedChoice.choiceId;
+            MirrorDelayedBudget(currentTask, selectedChoice);
             ApplyChoiceImpacts(selectedChoice);
             TaskSystem.Instance.CompleteTask(currentTask);
         }
@@ -1349,8 +1339,21 @@ private bool CompleteTaskActionCore(out string failReason)
         TaskSystem.Instance.CompleteTask(currentTask);
     }
 
-    CloseTaskDetail();
+    if (closePanel)
+        CloseTaskDetail();
+    else if (currentTask != null && currentTask.taskType == TaskType.Other)
+        TaskSystem.Instance.activeTasks.Remove(currentTask);   // what CloseTaskDetail does for Other tasks
     return true;
+}
+
+// The delayed-budget display mirror (the credit itself is scheduled by ApplyChoiceImpacts);
+// only once the choice has taken effect.
+void MirrorDelayedBudget(GameTask task, AgentChoice choice)
+{
+    if (choice.budgetDelayRounds <= 0) return;
+    var budgetImpact = choice.choiceImpacts.FirstOrDefault(i => i.impactType == ImpactType.Budget);
+    if (budgetImpact != null && budgetImpact.value != 0)
+        DelayedBudgetManager.Instance?.AddDelayedBudget(task.taskTitle, budgetImpact.value, choice.budgetDelayRounds);
 }
 
 // Ensure Food Delivery properly returns success
@@ -1426,7 +1429,10 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
         GameTask task = TaskSystem.Instance.activeTasks.FirstOrDefault(t => t.taskId == taskId);
         if (task == null && !string.IsNullOrEmpty(stableId))
         {
-            task = TaskSystem.Instance.activeTasks.FirstOrDefault(t => t.stableTaskId == stableId);
+            // stableTaskId is the template id, shared by every live instance of that template
+            // (e.g. all food requests): fall back only when it names exactly one task.
+            var matches = TaskSystem.Instance.activeTasks.Where(t => t.stableTaskId == stableId).Take(2).ToList();
+            if (matches.Count == 1) task = matches[0];
         }
         if (task == null)
         {
@@ -1434,17 +1440,6 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
                          $"[ids: {string.Join(",", TaskSystem.Instance.activeTasks.Select(t => t.taskId))}]";
             return false;
         }
-        // Re-check live state before acting, exactly as OnConfirmButtonClicked (the human GUI)
-        // and TryConfirmTask (the agent conversation) both do. Without it THIS path — the gym and
-        // benchmark one — could confirm a task whose facility had already been drained by an
-        // earlier confirm, i.e. act on state the human interface would have refused. Both wings
-        // have to see the same world for their scores to be comparable.
-        if (TaskSystem.Instance != null && !TaskSystem.Instance.RefreshTaskAgainstLiveState(task))
-        {
-            failReason = "This task is no longer needed and has been automatically closed.";
-            return false;
-        }
-
         AgentChoice choice = task.agentChoices != null
             ? task.agentChoices.FirstOrDefault(c => c.choiceId == choiceId)
             : null;
@@ -1454,22 +1449,10 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
             return false;
         }
 
-        currentTask = task;
-        selectedChoice = choice;
-        numericalInputs.Clear();
-        foreach (var input in task.numericalInputs)
-            numericalInputs[input.inputId] = input;
-
-        // The SAME gate the UI runs (expiry, numerical inputs, delivery feasibility, worker rules,
-        // budget), then the SAME execution; the reason for any refusal is reported verbatim so the
-        // gym/router never has to guess (it used to say "insufficient budget" for every failure).
-        if (!ValidateBeforeConfirm(task, choice, out failReason))
-        {
-            failReason = $"Choice {choiceId} on task {taskId} rejected: {failReason}";
-            return false;
-        }
+        // The SAME path a human's Confirm takes (answered-once ledger, live-state refresh, the
+        // UI's validation, the same execution); the reason for any refusal is reported verbatim.
         string why;
-        bool ok = CompleteTaskAction(out why);
+        bool ok = ResolveChoice(task, choice, fromThisPanel: false, out why);
         if (!ok)
             failReason = $"Choice {choiceId} on task {taskId} rejected: {why}";
         return ok;

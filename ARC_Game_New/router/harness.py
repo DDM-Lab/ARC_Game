@@ -80,7 +80,7 @@ async def run(rounds, exe, unity_port):
     # ── Boot the REAL headless Unity game engine over gym-TCP.
     print("[harness] launching headless Unity …")
     env = GameEnv(unity_exe_path=exe, unity_port=unity_port,
-                        auto_start_unity=True, manual_transfers=True)
+                        auto_start_unity=True, manual_transfers=False)
     obs, info = env.reset()
     print(f"[harness] Unity up. day={info.get('day')} sat={info.get('satisfaction')} "
           f"budget={info.get('budget')} actions={info.get('valid_action_count')}")

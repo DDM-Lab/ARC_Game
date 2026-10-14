@@ -1001,7 +1001,6 @@ class OfficerLoopMixin:
             "role": "user",
             "content": (
                 f"{preamble}\n{state_text}\n\n"
-                f"{self._committed_ledger_text()}"
                 f"{actions_header}\n{action_text}\n\n"
                 f"{closing}"
             ),

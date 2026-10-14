@@ -367,7 +367,7 @@ TOOL_SCHEMAS: Dict[str, dict] = {
 # ── The typed action tools (cora.tools) are the officer's action surface ──
 # The same schema the benchmark and the RL policy use, run through the same executor
 # (router.session.Session._execute_calls → cora.executor).
-for _t in openai_tools(manual_transfers=True):  # include transfer in the officer palette
+for _t in openai_tools():  # no standalone transfer: humans can't make one (see router.common)
     TOOL_SCHEMAS[_t["function"]["name"]] = _t
 DEFAULT_TOOLS = list(TOOL_SCHEMAS)
 

@@ -40,6 +40,29 @@ def staffing_need(facility: dict) -> int:
     return max(0, required - (facility.get("assignedWorkforce", 0) or 0))
 
 
+def staff_plan(facility: dict, free_trained: int, free_untrained: int):
+    """How to staff a built facility FULLY, the only staffing the game runs (a human's staffing
+    panel and ActionExecutor.ExecuteAssignment both require assigned workforce == required;
+    trained = 2 units, untrained = 1). Returns (head_count, trained, untrained) for the WHOLE
+    requirement, trained-first, or None when the free workers can't make it up exactly.
+
+    ExecuteAssignment releases the building's current staff and assigns `head_count` workers as
+    trained = required - head_count, untrained = 2*head_count - required, which is exactly this
+    split. A facility that already has some staff (rare: the game never staffs partially) counts
+    its own workers as reachable, as TryStaffBuildingWithComposition does; their trained/untrained
+    split is not exported, so they are counted as untrained (the conservative case)."""
+    if staffing_need(facility) <= 0:
+        return None
+    required = facility.get("requiredWorkforce", BUILDING_REQUIRED_WORKFORCE) or 0
+    reach_tr = max(0, free_trained or 0)
+    reach_un = max(0, free_untrained or 0) + max(0, facility.get("assignedWorkforce", 0) or 0)
+    trained = min(reach_tr, required // 2)
+    untrained = required - 2 * trained
+    if untrained > reach_un:
+        return None
+    return trained + untrained, trained, untrained
+
+
 def _action(action_id, action_type, description, cost, requirements, effects, payload_key, payload):
     return {"action_id": action_id, "action_type": action_type, "description": description,
             "cost": cost, "requirements": requirements, "effects": effects, payload_key: payload}
@@ -47,8 +70,9 @@ def _action(action_id, action_type, description, cost, requirements, effects, pa
 
 def assignment_action(building_name: str, quantity: int, worker_type: str | None = None,
                       need: int | None = None) -> dict:
-    """A worker_assignment action. Without worker_type, Unity assigns trained workers first
-    (how cora.executor staffs a building fully in one action)."""
+    """A worker_assignment action. Without worker_type, Unity splits `quantity` workers as
+    trained = required - quantity, untrained = 2*quantity - required (see staff_plan): how
+    cora.executor staffs a building fully in one action."""
     if worker_type:
         return _action(f"assign_{worker_type}_{building_name}_{quantity}", "worker_assignment",
                        f"Assign {quantity} {worker_type} worker(s) to {building_name}", 0,
@@ -123,6 +147,9 @@ def _transfers(gs):
 
 
 def _assignments(gs):
+    # Per-type count rows are the benchmark's recorded menu (baselines, exploration and the
+    # surrogate fixtures index into it); every one resolves to staff(site) through as_tool_call,
+    # which the executor turns into the single full staffing the game runs (staff_plan).
     ws = gs.get("workforceState") or {}
     free = {"trained": ws.get("freeTrainedWorkers", 0), "untrained": ws.get("freeUntrainedWorkers", 0)}
     for f in (gs.get("mapState") or {}).get("facilities", []):

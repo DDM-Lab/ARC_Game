@@ -6,7 +6,7 @@ import os
 
 import pytest
 
-from cora.actions import assignment_action, enumerate_actions, staffing_need
+from cora.actions import assignment_action, enumerate_actions, staff_plan, staffing_need
 
 _FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures", "game_states.jsonl.gz")
 with gzip.open(_FIXTURE, "rt") as _f:
@@ -39,7 +39,22 @@ def test_staffing_need():
     assert staffing_need({"buildingStatus": "UnderConstruction", "requiredWorkforce": 4}) == 0
 
 
+def test_staff_plan_is_full_and_exact():
+    f = {"facilityName": "Shelter Alpha", "buildingStatus": "NeedWorker", "requiredWorkforce": 4, "assignedWorkforce": 0}
+    assert staff_plan(f, 3, 0) == (2, 2, 0)            # trained first: 2 trained = 4 units
+    assert staff_plan(f, 1, 2) == (3, 1, 2)
+    assert staff_plan(f, 0, 3) is None                  # 3 units can't make 4
+    odd = dict(f, requiredWorkforce=5)
+    assert staff_plan(odd, 3, 0) is None                # 5 units needs an untrained worker
+    assert staff_plan(odd, 3, 1) == (3, 2, 1)
+    # ExecuteAssignment's split of the head count is the plan's split
+    q, t, u = staff_plan(odd, 3, 1)
+    assert (5 - q, 2 * q - 5) == (t, u)
+
+
 def test_untyped_assignment_is_what_the_executor_synthesizes():
     a = assignment_action("Shelter Alpha", 2, need=4)
     assert a["assignment"] == {"building_name": "Shelter Alpha", "quantity": 2}
     assert "worker_type" not in a["assignment"]        # Unity assigns trained workers first
+
+

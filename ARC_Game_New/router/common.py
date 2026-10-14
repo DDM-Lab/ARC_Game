@@ -19,18 +19,18 @@ def _num(v, default=0):
     """A number for $-formatting; anything else formats as `default`."""
     return v if isinstance(v, (int, float)) else default
 
-# Action types that are site/target-bound and NOT legitimately repeatable within a
-# planning phase (building a site, demolishing it, assigning workers to a specific
-# building are idempotent). Quantity actions — hiring more workers, transferring
-# more people — CAN legitimately repeat, so ledger_mode="block" leaves them alone.
-_NON_REPEATABLE_TYPES = {"construction", "deconstruction", "worker_assignment"}
 
 
 
 def _enumerate_actions(game_state: dict) -> list[dict]:
     """The round's action menu (cora.actions) plus the task_choice pseudo-actions below."""
     try:
-        actions = enumerate_actions(game_state)
+        # Officers play by the human GUI's rule: food and people move only through a task's
+        # choice, never as a standalone transfer (playtest 2026-10-07: officers were moving
+        # community food into kitchens, which no player can do). Same rule as bench and RL
+        # (GameEnv manual_transfers=False).
+        actions = [a for a in enumerate_actions(game_state)
+                   if a.get("action_type") != "resource_transfer"]
     except Exception as e:
         print(f"[router] action enumeration error: {e}")
         actions = []

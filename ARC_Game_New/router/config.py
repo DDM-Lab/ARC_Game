@@ -80,12 +80,9 @@ class AgentConfig:
     #                   palette and does exactly what was asked. This is the
     #                   "activate when spoken to" posture.
     opening_mode: str = "emergent"         # "emergent" | "brief_first" | "reactive"
-    # Planning-phase ledger enforcement. The paused-phase observation is frozen, so
-    # the agent can't see its own queued actions and may repeat them. "annotate" =
-    # mark already-committed actions inline (advisory; the model may still pick
-    # them). "block" = the harness no-ops a re-execution of a non-repeatable action
-    # already committed this phase (staleness-style, à la Claude Code read-before-
-    # edit) — grounding, not style-gating.
+    # Deprecated, ignored: the router no longer keeps its own planning-phase ledger. Unity's
+    # state (re-read after every commit) is the one record, for officers and humans alike.
+    # Kept so existing configs and bundles still load.
     ledger_mode: str = "block"             # "block" | "annotate"
     # Runtime state — not from config
     conversation_history: list[dict] = field(default_factory=list, init=False)

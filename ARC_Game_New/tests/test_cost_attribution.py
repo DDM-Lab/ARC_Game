@@ -99,44 +99,6 @@ def test_proposals_not_counted() -> None:
           f"got {captured.get('queued_cost')}")
 
 
-def test_ledger_shows_spend() -> None:
-    """The officer's ledger states the committed spend as a number."""
-    print("\n[4] committed-spend line reaches the officer")
-    import router.session as router_session
-    s = router_session.Session.__new__(router_session.Session)
-    s._committed_this_phase = []
-    s._committed_spend_this_phase = 0.0
-
-    check("no ledger before any commit", s._committed_ledger_text() == "")
-
-    router_session.Session._record_committed(
-        s, {"action_type": "construction", "description": "Build Kitchen", "cost": 1000})
-    router_session.Session._record_committed(
-        s, {"action_type": "worker", "description": "Hire 5 untrained", "cost": 500})
-    txt = router_session.Session._committed_ledger_text(s)
-
-    check("spend tallied", s._committed_spend_this_phase == 1500,
-          f"got {s._committed_spend_this_phase}")
-    check("ledger states the figure", "Committed spend this phase: $1,500" in txt,
-          f"ledger=...{txt[:160]}")
-    check("ledger still lists the actions", "Build Kitchen" in txt and "Hire 5" in txt)
-
-    # Dedup must not double-count.
-    router_session.Session._record_committed(
-        s, {"action_type": "construction", "description": "Build Kitchen", "cost": 1000})
-    check("re-committing the same action does not double-count",
-          s._committed_spend_this_phase == 1500, f"got {s._committed_spend_this_phase}")
-
-    # A zero-cost phase should not print a misleading "$0" line.
-    s2 = router_session.Session.__new__(router_session.Session)
-    s2._committed_this_phase = []
-    s2._committed_spend_this_phase = 0.0
-    router_session.Session._record_committed(
-        s2, {"action_type": "task_choice", "description": "answer task", "cost": 0})
-    check("no spend line when nothing cost anything",
-          "Committed spend" not in router_session.Session._committed_ledger_text(s2))
-
-
 # ── keys-file sanitizer (security regression guard) ─────────────────────────
 def test_annotation_entries_are_not_credentials() -> None:
     """A `_comment` entry in a key map must never become a working API key.
@@ -171,7 +133,6 @@ def main() -> int:
     test_turn_record_costs()
     test_missing_and_bad_costs()
     test_proposals_not_counted()
-    test_ledger_shows_spend()
     test_annotation_entries_are_not_credentials()
     print("\n" + "=" * 72)
     if FAILS:

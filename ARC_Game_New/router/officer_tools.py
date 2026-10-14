@@ -14,9 +14,10 @@ from cora.tools import TOOLS
 _CORA_ACTION_TOOLS = {t["name"] for t in TOOLS}
 from router import plugin_api
 from cora import executor
+from cora.actions import staff_plan
 from cora.observation import officer_text, task_group, task_token, vehicle_capacity
 
-from router.common import _CORA_ACTION_TOOLS, _num, _NON_REPEATABLE_TYPES, _enumerate_actions, _num_free_vehicles
+from router.common import _CORA_ACTION_TOOLS, _num, _enumerate_actions, _num_free_vehicles
 from router.plugin_context import _SessionToolContext
 
 
@@ -69,48 +70,6 @@ class OfficerToolsMixin:
             note += (f"; {free} free, so {trips - free} trip(s) wait for a vehicle"
                      if trips > free else f"; {free} free, covered")
         return note
-
-    def _committed_ledger_text(self) -> str:
-        """Render the planning-phase ledger as a context block (empty if none).
-
-        The paused-phase observation is frozen and doesn't reflect the agent's own
-        queued actions, so without this the agent re-proposes what it already
-        committed. Ends with a blank line so it slots cleanly between the state and
-        the action list in the opening message.
-        """
-        if not self._committed_this_phase:
-            return ""
-        items = "\n".join(f"  - {c}" for c in self._committed_this_phase)
-        # State the committed spend as a NUMBER. The prose below already warns that the
-        # frozen budget excludes these commits, but without the figure the officer has to
-        # infer it — and a wrong inference means overcommitting against money it no longer
-        # has. (Observed live: an officer built a $1,000 kitchen, was still shown $5,000,
-        # and reported "~$4,000" as arithmetic rather than fact.)
-        spend = ""
-        if self._committed_spend_this_phase:
-            spend = (f"Committed spend this phase: ${self._committed_spend_this_phase:,.0f} "
-                     f"— subtract it from the budget shown above before deciding what you "
-                     f"can still afford.\n")
-        return (
-            "YOU HAVE ALREADY COMMITTED these actions this planning phase — they are "
-            "locked in and real, and take effect when the phase resolves (next "
-            "round):\n"
-            f"{items}\n"
-            f"{spend}"
-            "The frozen situation above was captured BEFORE these commits, so its "
-            "counts (worker totals, budget) and facility list do NOT include them "
-            "yet. When you reason or report to the director, RECONCILE the two: "
-            "treat everything listed here as existing/pending. Never tell the "
-            "director something doesn't exist if you just committed it — say it is "
-            "queued and when it lands (workers you hired are available to assign, "
-            "and newly-built facilities finish and become staffable, once this phase "
-            "resolves next round). Do NOT re-commit anything listed here.\n\n"
-        )
-
-    @staticmethod
-    def _action_ledger_key(action: dict) -> str:
-        """Canonical ledger string for an action (used to record AND to match)."""
-        return f"[{action.get('action_type', '?')}] {action.get('description', '?')}"
 
     @staticmethod
     def _humanize_committed_action(action: dict) -> str:
@@ -169,41 +128,18 @@ class OfficerToolsMixin:
         # Unknown type: fall back to the enumerator's own description.
         return str(action.get("description") or "Committed an action")
 
-    def _record_committed(self, action: dict) -> None:
-        """Append a succeeded action to the planning-phase ledger (deduped), and add its
-        cost to the phase's committed spend so the officer can reconcile a frozen budget."""
-        # Spend accumulates OUTSIDE the dedupe. The ledger key is "[type] description", so two
-        # legitimate repeats of a repeatable action (worker, resource_transfer — both
-        # deliberately excluded from _NON_REPEATABLE_TYPES) collapse onto one line. Counting
-        # their cost once understated the very figure this ledger exists to make truthful.
-        try:
-            self._committed_spend_this_phase += float(action.get("cost") or 0)
-        except (TypeError, ValueError):
-            pass
-        line = self._action_ledger_key(action)
-        if line not in self._committed_this_phase:
-            self._committed_this_phase.append(line)
-
     def _render_action_list(self, filtered_actions: List[dict]) -> str:
         """Render the filtered actions as an indexed list (index == execute index).
 
-        Actions already committed this planning phase are flagged INLINE — at the
-        exact index the model chooses — because a separate 'do not repeat' block
-        upstream isn't decisive enough on its own (the model re-executes anyway).
-        The action stays in the list (no gating); it's just truthfully marked.
+        The menu comes from the live game state, so what is already done is simply not offered.
         """
         if not filtered_actions:
             return "(no valid actions available to you)"
-        committed = set(self._committed_this_phase)
         lines = []
         for i, a in enumerate(filtered_actions):
-            if self._action_ledger_key(a) in committed:
-                done = " ⚠️ ALREADY COMMITTED THIS PHASE — do NOT pick again"
-            else:
-                done = ""
             lines.append(
                 f"{i}. [{a.get('action_type', '?')}] {a.get('description', '?')} "
-                f"(cost: ${_num(a.get('cost')):,}){done}"
+                f"(cost: ${_num(a.get('cost')):,})"
             )
         return "\n".join(lines)
 
@@ -213,16 +149,12 @@ class OfficerToolsMixin:
 
         (a) Task rows carry the stable task token (cora.observation.task_token, from the RAW
             task, so it matches what the task tool accepts), not a turn-to-turn taskId.
-        (b) Committed non-repeatable affordances are pulled OUT of the available set and listed
-            under an ALREADY-COMMITTED footer, using `_action_ledger_key` so the identity
-            matches the ledger block.
+        (b) The menu is built from the live game state (refreshed after every commit), so what
+            is already done is simply not offered; there is no router-side ledger.
         """
         if not filtered_actions:
             return "(no valid actions available to you)"
-        committed = set(self._committed_this_phase)
-        avail, done = [], []
-        for a in filtered_actions:
-            (done if self._action_ledger_key(a) in committed else avail).append(a)
+        avail = list(filtered_actions)
 
         sites: dict = {}          # site_id -> [site_name, {building_types}]
         hire = {"untrained": 0, "trained": 0}
@@ -323,8 +255,15 @@ class OfficerToolsMixin:
             lines.append("  hire(kind, count): " + "  |  ".join(hires))
         if train:
             lines.append(f"  train(count): up to {train} untrained")
-        if staff:
-            lines.append("  staff(site): " + ", ".join(staff))
+        # Only buildings the free workers can staff FULLY (the game runs nothing else, for
+        # humans or officers): the per-count menu rows also exist for ones they can't.
+        ws = game_state.get("workforceState") or {}
+        facs = {f.get("facilityName"): f for f in (game_state.get("mapState") or {}).get("facilities", [])}
+        staffable = [bn for bn in staff
+                     if bn in facs and staff_plan(facs[bn], ws.get("freeTrainedWorkers", 0),
+                                                  ws.get("freeUntrainedWorkers", 0))]
+        if staffable:
+            lines.append("  staff(site): " + ", ".join(staffable))
         if decon:
             lines.append("  deconstruct(site): " + ", ".join(decon))
         if transfer:
@@ -332,11 +271,6 @@ class OfficerToolsMixin:
         for tid, tk in tasks.items():
             opts = "  ".join(f"[{cid}] {txt}" for cid, txt in tk["choices"])
             lines.append(f'  task(task_id="{tk["token"]}", choice_id)  "{tk["title"]}": {opts}')
-        if done:
-            lines.append("")
-            lines.append("⚠️ ALREADY COMMITTED THIS PHASE — do NOT pick these again:")
-            for a in done:
-                lines.append(f"  - [{a.get('action_type', '?')}] {a.get('description', '?')}")
         return "\n".join(lines)
 
     @staticmethod
@@ -591,36 +525,13 @@ class OfficerToolsMixin:
         def call_of(r):
             return {"tool": r.tool, "args": r.args}
 
-        # ledger_mode="block": a NON-repeatable action already committed this phase is not re-sent
-        # (the paused-phase state cannot show the queued action yet, so redoing it would just fail
-        # engine-side). Grounding, not style-gating: hire/train/transfer are never blocked, and the
-        # rest of the batch still runs.
-        blocked = []
-        if getattr(agent, "ledger_mode", "annotate") == "block":
-            committed = set(self._committed_this_phase)
-            keep = []
-            for a, r in to_run:
-                if a.get("action_type") in _NON_REPEATABLE_TYPES and self._action_ledger_key(a) in committed:
-                    blocked.append((a, r))
-                else:
-                    keep.append((a, r))
-            to_run = keep
+        # No router-side ledger: Unity is the one record of what has been done (the same one the
+        # human acts on), and execute_resolved re-reads the game state after every commit.
         exec_results, game_state = (
             await self.execute_resolved([{"kind": "action", "action": a} for a, _ in to_run],
                                         game_state=game_state, scope_agent=agent)
             if to_run else ([], game_state))
         executed, lines, results = 0, [], []
-        for a, r in blocked:
-            self._log_action(self._actor_for(agent), "game_action", r.tool,
-                             {"action": a, "success": False, "error": "blocked_already_committed",
-                              "call": call_of(r), **self._outcome_fields("invalid")})
-            results.append({"action_id": a.get("action_id"), "action_type": a.get("action_type"),
-                            "description": a.get("description"), "cost": a.get("cost") or 0,
-                            "success": False, "error": "blocked_already_committed"})
-            print(f"[router]   ⛔ Blocked re-execution (already committed this phase): "
-                  f"{self._action_ledger_key(a)}")
-            lines.append(f"  ⛔ {a.get('description', '(action)')} — already committed "
-                         f"this phase (queued; re-doing is a no-op)")
         for (action, r), res in zip(to_run, exec_results):
             success = bool(res.get("success"))
             err = res.get("error_message") or ""
@@ -635,7 +546,6 @@ class OfficerToolsMixin:
             desc = action.get("description", "(action)")
             if success:
                 executed += 1
-                self._record_committed(action)
                 await self._fire_hooks(
                     "on_action_executed",
                     {"actor": agent.subagent_name, "source": "officer",
@@ -721,9 +631,6 @@ class OfficerToolsMixin:
         meta["executed"] = executed
         meta["results"] = results
         parts = [f"Ran {len(to_run)} action(s); {executed} succeeded."]
-        if blocked:
-            parts[0] += (f" {len(blocked)} already-committed action(s) were skipped "
-                         f"(queued from earlier this phase).")
         if summaries:
             parts.append("Resolved: " + "; ".join(summaries))
         if lines:

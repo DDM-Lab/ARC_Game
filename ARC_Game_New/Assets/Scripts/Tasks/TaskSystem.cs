@@ -1707,6 +1707,37 @@ public class TaskSystem : MonoBehaviour
     ///
     /// Returns true if the task is still valid (whether or not anything needed refreshing).
     /// </summary>
+    /// <summary>
+    /// The one ledger of which tasks may still be answered, for every actor: the human detail
+    /// panel, the officer conversation panel, and the agent/gym path (TaskDetailUI.ResolveChoice).
+    /// A task can be answered once: it must still be in activeTasks and still Active. An answered
+    /// task is either Completed (off activeTasks) or InProgress (its delivery is under way) — the
+    /// latter used to stay answerable, and a stale panel could also re-confirm a completed task,
+    /// so the same choice (e.g. +$50,000 Storm Funding) could be booked twice.
+    /// </summary>
+    public bool CanAnswer(GameTask task, out string reason)
+    {
+        reason = null;
+        if (task == null) { reason = "No task selected."; return false; }
+        if (task.taskId == -1) return true;   // router proposal pseudo-task, not in activeTasks
+        if (!activeTasks.Contains(task) || task.status == TaskStatus.Completed)
+        {
+            reason = "This task has already been answered or closed.";
+            return false;
+        }
+        if (task.status == TaskStatus.InProgress)
+        {
+            reason = "This task has already been answered; its delivery is under way.";
+            return false;
+        }
+        if (task.isExpired || task.status != TaskStatus.Active)
+        {
+            reason = "This task has expired and can no longer be completed.";
+            return false;
+        }
+        return true;
+    }
+
     public bool RefreshTaskAgainstLiveState(GameTask task)
     {
         if (task == null || !activeTasks.Contains(task) || task.agentChoices == null) return task != null;
@@ -3295,6 +3326,7 @@ public class TaskSystem : MonoBehaviour
                         continue;
                 }
                 var brief = new TaskChoiceBrief { choiceId = c.choiceId,
+                                                  displayIndex = task.agentChoices.IndexOf(c) + 1,
                                                   choiceText = task.ResolvePlaceholders(c.choiceText, plainFacilityName: true, foodAmountOverride: liveFood) };
                 // Forward structured destination so Python policies don't need to parse choiceText.
                 // CaseworkSite is checked first: a casework choice's name includes the client group
@@ -3614,11 +3646,9 @@ public class TaskSystem : MonoBehaviour
                 if (p != null)
                     list.Add(new PendingEffect { kind = "funding", description = p.label, amount = p.amount,
                                                  roundsRemaining = p.roundsRemaining, daysRemaining = -1 });
-        if (DelayedBudgetManager.Instance != null)
-            foreach (var d in DelayedBudgetManager.Instance.activeDelayedBudgets)
-                if (d != null)
-                    list.Add(new PendingEffect { kind = "funding", description = d.sourceTaskTitle, amount = d.amount,
-                                                 roundsRemaining = d.roundsRemaining, daysRemaining = -1 });
+        // Not DelayedBudgetManager too: it is the Pending Actions panel's display copy of these
+        // same allocations (TaskDetailUI.MirrorDelayedBudget), so listing both reported every
+        // delayed fund twice — a $50,000 Storm Funding read as $100,000 in the pipeline.
         if (WorkerRequestSystem.Instance != null)
             foreach (var r in WorkerRequestSystem.Instance.GetActiveRequestTasks())
                 if (r != null && !r.isCompleted)
@@ -3654,6 +3684,7 @@ public class TaskSystem : MonoBehaviour
                 day = day,
                 completedTasks = m.completedTasks, totalTasks = m.totalTasks, expiredTasks = m.expiredTasks,
                 foodProduced = m.foodProduced, foodDelivered = m.foodDelivered, foodWasted = m.foodWasted,
+                foodNeeded = m.foodNeededToday, foodConsumed = m.foodConsumedTotalToday,
                 shelterOccupancyRate = m.shelterOccupancyRate, idleWorkers = m.idleWorkers,
                 startingBudget = m.startingBudget, budgetSpent = m.budgetSpent,
                 budgetReceived = m.budgetReceived, endingBudget = m.endingBudget,

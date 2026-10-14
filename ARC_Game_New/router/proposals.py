@@ -250,13 +250,10 @@ class ProposalsMixin:
                 err = (r.get("error") or "").strip()
                 mark = "SUCCESS" if ok else "FAILED"
                 lines.append(f"  - {aid}: {mark}" + (f" — {err}" if err and not ok else ""))
-                # Ledger the succeeded actions so later turns this phase don't
-                # re-propose them (order matches the package's action_indices).
                 if ok and pos < len(pkg_indices):
                     ai = pkg_indices[pos]
                     if 0 <= ai < len(proposed_actions):
                         committed = proposed_actions[ai]
-                        self._record_committed(committed)
                         # Per-action visibility parity with execute_game_action /
                         # the action tools: narrate each executed action (esp. a build)
                         # to the director so a chosen package's effects show up in the

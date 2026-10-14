@@ -121,18 +121,6 @@ class Session(UnityIOMixin, OfficerLoopMixin, OfficerToolsMixin, ProposalsMixin,
         # NOT block other officers' execute_game_action commits (that's the separate
         # commit lock), so a parked proposal never freezes the acting officers.
         self._director_attention_lock: asyncio.Lock = asyncio.Lock()
-        # Ledger of actions a continuous agent has committed during the current
-        # paused planning phase. The observable game state is FROZEN while paused
-        # (budget/population/facilities don't move until the round simulates), so a
-        # re-reading agent can't see its own queued work and re-proposes duplicates
-        # (which then fail "site not available"). We surface this ledger in each
-        # turn's opening context and clear it when the round advances (world catches
-        # up). Grounding only — never gates the agent's choices.
-        self._committed_this_phase: List[str] = []
-        # Running $ total of what has been committed this planning phase. The frozen
-        # observation cannot show it (actions are queued, not resolved), so without this
-        # the officer reasons about spend against a budget that never moves.
-        self._committed_spend_this_phase: float = 0.0
         # Persistent per-agent tool-loop transcript for continuous agents. Unlike
         # every other actor type (which rebuilds its prompt from the MessageQueue
         # each turn), a continuous agent carries ONE growing OpenAI-shape
@@ -426,15 +414,6 @@ class Session(UnityIOMixin, OfficerLoopMixin, OfficerToolsMixin, ProposalsMixin,
         await self._fire_hooks("on_round_start",
                                {"round": self.round_num, "day": self.day, "segment": self.segment})
 
-        # The round advanced: the world simulates and the fresh game_state now
-        # reflects everything queued last phase. The committed-this-phase ledger is
-        # stale — drop it so it doesn't double-count into the new phase.
-        if self._committed_this_phase:
-            print(f"[router]   🧾 Clearing planning-phase ledger "
-                  f"({len(self._committed_this_phase)} committed action(s)).")
-            self._committed_this_phase = []
-            self._committed_spend_this_phase = 0.0
-
         # Validate game state has required fields
         self._validate_game_state(game_state)
         # Per-round state record. Written for EVERY session, LLM or not: before this, a
@@ -600,13 +579,11 @@ class Session(UnityIOMixin, OfficerLoopMixin, OfficerToolsMixin, ProposalsMixin,
         # start it clean (no stale trajectory bleeding across games).
         self._continuous_transcripts.clear()
         self._msg_injected_count.clear()
-        # World state and the planning-phase ledger are per-GAME too. Leaving them behind let a
+        # World state is per-GAME too. Leaving them behind let a
         # director_message arriving between game_start and the first begin_round pass the
         # `if self._latest_game_state:` gate and run a turn against the PREVIOUS game's state.
         self._latest_game_state = None
         self._latest_all_actions = []
-        self._committed_this_phase = []
-        self._committed_spend_this_phase = 0.0
         print("[router] 🆕 game_start received — message queue cleared, round counter reset.")
 
     def _get_agent_by_name(self, agent_name: str) -> Optional[AgentConfig]:

@@ -50,6 +50,9 @@ public class TaskChoiceBrief
     // without this an agent saw it as an ordinary option and had it refused on confirm.
     public bool feasible = true;
     public string unavailableReason;
+    // 1-based position of this choice's card in the player's task panel, which lists EVERY
+    // choice; this export drops some (relocations with no room), so its order is not the screen's.
+    public int displayIndex;
 }
 
 [System.Serializable]
@@ -118,6 +121,7 @@ public class DailyReportSummary
     public int day;
     public int completedTasks, totalTasks, expiredTasks;
     public int foodProduced, foodDelivered, foodWasted;
+    public int foodNeeded, foodConsumed;
     public float shelterOccupancyRate;
     public int idleWorkers;
     public float startingBudget, budgetSpent, budgetReceived, endingBudget;
@@ -159,13 +163,13 @@ public class RewardMetrics
     public float liveSatisfaction;       // SatisfactionAndBudget.currentSatisfaction (0..1000 scale)
     public float liveEfficiency;         // SatisfactionAndBudget.currentEfficiency   (0..1000 scale)
     public float sFood, sLodging, sWorkerUse, sWaste, sCasework;   // DailyReportData.S_*()
-    public float cFood, cLodging, cWorker;                         // DailyReportData.C_*()  (higher = better)
+    public float cFood, cLodging, cWorker, cCasework;              // DailyReportData.C_*()  (higher = better)
     public float satisfactionComponentsTotal;   // ComputeFreshSatisfactionTotal()
     public float efficiencyComponentsTotal;     // ComputeFreshEfficiencyTotal()
     // The raw counters behind the ratios, so a run can be re-scored offline.
     public int foodPacksConsumed, foodPacksNeeded, foodPacksWasted;
-    public int lodgingNightsConsumed, lodgingNightsNeeded;
-    public int clientRoundsAwaitingCasework, clientsRequestedCasework;
+    public int lodgingRoundsConsumed, lodgingRoundsNeeded;
+    public int clientsCaseworkSatisfied, clientsRequestedCasework;
     public int idleWorkerRounds, workingWorkerRounds, trainingWorkerRounds;
 }
 

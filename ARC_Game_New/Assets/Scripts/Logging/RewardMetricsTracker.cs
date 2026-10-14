@@ -226,15 +226,17 @@ public class RewardMetricsTracker : MonoBehaviour
         {
             p.sFood = d.S_Food(); p.sLodging = d.S_Lodging(); p.sWorkerUse = d.S_WorkerUse();
             p.sWaste = d.S_Waste(); p.sCasework = d.S_Casework();
-            p.cFood = d.C_Food(); p.cLodging = d.C_Lodging(); p.cWorker = d.C_Worker();
+            p.cFood = d.C_Food(); p.cLodging = d.C_Lodging(); p.cWorker = d.C_Worker(); p.cCasework = d.C_Casework();
             p.satisfactionComponentsTotal = d.ComputeFreshSatisfactionTotal();
             p.efficiencyComponentsTotal = d.ComputeFreshEfficiencyTotal();
             p.foodPacksConsumed = d.GetCumulativeFoodPacksConsumedByClients();
             p.foodPacksNeeded = d.GetCumulativeFoodPacksNeededByClients();
             p.foodPacksWasted = d.GetCumulativeFoodPacksWasted();
-            p.lodgingNightsConsumed = d.GetCumulativeLodgingNightsConsumed();
-            p.lodgingNightsNeeded = d.GetCumulativeLodgingNightsNeeded();
-            p.clientRoundsAwaitingCasework = d.GetCumulativeClientRoundsAwaitingCasework();
+            // Lodging occupancy is sampled per ROUND since the study hotfix (0a870e959), and
+            // casework satisfaction counts clients delivered (017fbb3a8), not client-rounds waiting.
+            p.lodgingRoundsConsumed = d.GetCumulativeLodgingRoundsConsumed();
+            p.lodgingRoundsNeeded = d.GetCumulativeLodgingRoundsNeeded();
+            p.clientsCaseworkSatisfied = d.GetCumulativeClientsCaseworkSatisfied();
             p.clientsRequestedCasework = d.GetCumulativeClientsRequestedCasework();
             p.idleWorkerRounds = d.GetCumulativeIdleWorkerRounds();
             p.workingWorkerRounds = d.GetCumulativeWorkingWorkerRounds();

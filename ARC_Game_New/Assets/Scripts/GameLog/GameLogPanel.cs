@@ -410,8 +410,7 @@ public class LogExportData
     // The receiver writes these to a sidecar <name>.meta.json next to the CSV, so a session
     // can be reproduced (seed, RNG, build, the parameter set actually applied) and scored
     // (final values + the full end-of-game checkpoint) without re-parsing the message log.
-    public int seed;
-    public string seedSource;
+    // (seed / seedSource are declared above with the replay fields.)
     public string paramSource;
     public string parametersInEffect;   // GameDataManager.ParametersInEffectJson — what was APPLIED
     public string mapHash;
