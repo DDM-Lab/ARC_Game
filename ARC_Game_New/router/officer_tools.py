@@ -15,7 +15,7 @@ _CORA_ACTION_TOOLS = {t["name"] for t in TOOLS}
 from router import plugin_api
 from cora import executor
 from cora.actions import staff_plan
-from cora.observation import officer_text, task_group, task_token, vehicle_capacity
+from cora.observation import officer_text, resolve_task_ref, task_group, task_tokens, vehicle_capacity
 
 from router.common import _CORA_ACTION_TOOLS, _num, _enumerate_actions, _num_free_vehicles
 from router.plugin_context import _SessionToolContext
@@ -147,7 +147,7 @@ class OfficerToolsMixin:
         """Compact affordance view, grouped by action tool: what the officer can do now and the
         arguments to call each tool with. Nothing references a volatile menu index.
 
-        (a) Task rows carry the stable task token (cora.observation.task_token, from the RAW
+        (a) Task rows carry the stable task token (cora.observation.task_tokens, from the RAW
             task, so it matches what the task tool accepts), not a turn-to-turn taskId.
         (b) The menu is built from the live game state (refreshed after every commit), so what
             is already done is simply not offered; there is no router-side ledger.
@@ -201,10 +201,7 @@ class OfficerToolsMixin:
                 tc = a.get("task_choice", {})
                 tid, cid = tc.get("taskId"), tc.get("choiceId")
                 if tid not in tasks:
-                    raw = next((x for x in (game_state.get("allActiveTasks") or [])
-                                if x.get("taskId") == tid), None)
-                    tok = (task_token(self._norm_task_for_token(raw))
-                           if raw else f"TASK_{tid}")
+                    tok = task_tokens(game_state.get("allActiveTasks") or []).get(tid, f"TASK_{tid}")
                     tasks[tid] = {"token": tok, "title": tc.get("taskTitle") or "", "choices": []}
                 desc = a.get("description", "")
                 marker = f"choice {cid}: "
@@ -273,15 +270,6 @@ class OfficerToolsMixin:
             lines.append(f'  task(task_id="{tk["token"]}", choice_id)  "{tk["title"]}": {opts}')
         return "\n".join(lines)
 
-    @staticmethod
-    def _norm_task_for_token(t: dict) -> dict:
-        """Raw allActiveTasks row → the {title, affects} shape task_token
-        and task_officer read, so a token computed here matches what the agent saw
-        in its observation."""
-        return {"title": t.get("taskTitle") or t.get("title") or "",
-                "affects": t.get("affectedFacility") or t.get("affects") or "",
-                "taskId": t.get("taskId")}
-
     def _resolve_task(self, game_state: dict, query: str) -> Optional[dict]:
         """Find the active task the agent means by `query`: a numeric taskId, a
         stable token (FOOD_C01…), or a distinctive title substring. Returns the
@@ -291,14 +279,12 @@ class OfficerToolsMixin:
         if not ql:
             return None
         tasks = game_state.get("allActiveTasks") or []
-        if q.lstrip("-").isdigit():  # 1. exact taskId
-            for t in tasks:
-                if str(t.get("taskId")) == q:
-                    return t
-        for t in tasks:            # 2. exact stable token
-            if task_token(self._norm_task_for_token(t)).lower() == ql:
-                return t
-        for t in tasks:            # 3. title substring
+        try:                       # 1. taskId or token (CASEWORK_MOTEL#41), as the executor reads it
+            tid = resolve_task_ref(tasks, q)
+            return next(t for t in tasks if t.get("taskId") == tid)
+        except (ValueError, StopIteration):
+            pass
+        for t in tasks:            # 2. title substring
             title = (t.get("taskTitle") or t.get("title") or "").lower()
             if title and ql in title:
                 return t
@@ -317,7 +303,7 @@ class OfficerToolsMixin:
                 return (f"No active task matches {task_q!r}. Check read_state for the "
                         f"current tasks (by token or id), then look it up.\n\n{roster}")
             grp = task_group(t)
-            token = task_token(self._norm_task_for_token(t))
+            token = task_tokens(game_state.get("allActiveTasks") or []).get(t.get("taskId"))
             title = t.get("taskTitle") or t.get("title") or f"task {t.get('taskId')}"
             probe = {"action_type": "task_choice", "task_choice": {"group": grp}}
             owners = self._owning_agents(probe)

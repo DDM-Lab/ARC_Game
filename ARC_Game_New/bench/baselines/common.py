@@ -1,11 +1,9 @@
 """Helpers shared by the baseline policies."""
 from __future__ import annotations
 
-from collections import Counter
-
 from cora import params
 from cora.actions import as_tool_call
-from cora.observation import task_token
+from cora.observation import task_tokens
 
 def _building_value(gs, building_type, key, param):
     """`key` of an existing `building_type`, else the parameter sheet's value (the state shows a
@@ -102,16 +100,12 @@ def fill_shelters(env, actions, max_transfers=4):
 
 def tool_calls(env, dec) -> list:
     """A baseline's decision (task choices + menu indices) as typed tool calls, so baselines act
-    through cora.executor exactly like models. Tasks are named by their stable token, as the
-    observation shows them (the raw id if two active tasks share a token). A building listed
-    for staffing or teardown more than once becomes one call."""
-    tasks = {t["taskId"]: t for t in (env.game_state or {}).get("allActiveTasks") or []}
-    shared = {tok for tok, n in Counter(task_token(t) for t in tasks.values()).items() if n > 1}
+    through cora.executor exactly like models. Tasks are named by the token the observation shows
+    (task_tokens). A building listed for staffing or teardown more than once becomes one call."""
+    tokens = task_tokens((env.game_state or {}).get("allActiveTasks") or [])
     calls = []
     for c in dec.get("choices") or []:
-        t = tasks.get(c["taskId"])
-        tok = task_token(t) if t is not None else None
-        calls.append(("task", {"task_id": tok if tok and tok not in shared else str(c["taskId"]),
+        calls.append(("task", {"task_id": tokens.get(c["taskId"], str(c["taskId"])),
                                "choice_id": int(c["choiceId"])}))
     once = set()
     for i in dec.get("actions") or []:

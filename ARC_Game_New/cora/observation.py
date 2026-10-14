@@ -12,11 +12,13 @@ enumerator), from which the `available` block is derived. Options are explicit i
 nothing here reads globals or the environment.
 
 Every number shown comes from the game state (costs, capacities, workforce, the motel rate, the
-rounds left). Task ids are stable tokens (task_token) so a task keeps its name across turns.
+rounds left). Task ids are stable tokens (task_token) so a task keeps its name across turns;
+tasks that share a token are told apart by their game task number (task_tokens).
 """
 from __future__ import annotations
 
 import json
+from collections import Counter
 from dataclasses import dataclass
 
 
@@ -100,6 +102,8 @@ def observe(game_state: dict, actions: list | None = None, config: ObsConfig = O
 
 def _tasks(gs, facs, config):
     names = {f.get("name") for f in facs}
+    tokens = task_tokens(gs.get("allActiveTasks", []))
+    casework_open = _casework_site_in_use(gs)
     tasks = []
     for t in gs.get("allActiveTasks", []):
         choices = []
@@ -109,6 +113,9 @@ def _tasks(gs, facs, config):
                 o["impacts"] = {i["type"]: i["value"] for i in c["impacts"]}
             if config.mark_unavailable_choices and c.get("feasible") is False:
                 o["unavailable"] = (c.get("unavailableReason") or "cannot be carried out right now")[:140]
+            elif (config.mark_unavailable_choices and not casework_open
+                  and c.get("destinationCategory") == "CaseworkSite"):
+                o["unavailable"] = _NO_CASEWORK_SITE
             if config.officer_extras and c.get("displayIndex"):
                 o["screen"] = c["displayIndex"]       # the card's place in the player's panel
             choices.append(o)
@@ -123,11 +130,24 @@ def _tasks(gs, facs, config):
         affected = t.get("affectedFacility")
         if affected and affected in names:
             td["affects"] = affected
-        # Identity comes from the RAW affectedFacility, not the display `affects` above, so a task
-        # resolves to the same token in the observation and in the executor.
-        td["token"] = task_token({"title": t.get("taskTitle"), "affects": affected, "taskId": t.get("taskId")})
+        # Identity comes from the RAW task (affectedFacility, not the display `affects` above), so a
+        # task resolves to the same token in the observation and in the executor.
+        td["token"] = tokens[t["taskId"]]
         tasks.append(td)
     return tasks
+
+
+# The game's task panel does not grey out a casework choice (TaskDetailUI.IsChoiceFeasibleFor
+# exempts it), but confirming one refuses it unless an OPERATIONAL casework site exists
+# (ValidateSpecificBuildingPopulationDestination; its message says "currently built", but a built,
+# unstaffed site is refused too). Without the mark, models answered every Casework Request into
+# that refusal -- 93 refused calls in one qwen3.5:4b game (local benchmark, 2026-10-13).
+_NO_CASEWORK_SITE = "no casework site is in use (one must be built and fully staffed)"
+
+
+def _casework_site_in_use(gs) -> bool:
+    return any(f.get("buildingType") == "CaseworkSite" and f.get("isOperational")
+               for f in (gs.get("mapState") or {}).get("facilities", []))
 
 
 def _rounds_left(gs):
@@ -600,6 +620,44 @@ def task_token(t: dict) -> str:
         if fragment in title:
             return token[:-1] + _short_affects(affects) if token.endswith("*") else token
     return f"TASK_{t.get('taskId', 'X')}"
+
+
+def task_tokens(tasks) -> dict:
+    """taskId -> the id a model is shown for each active task: its task_token, except when several
+    active tasks share one (the Motel sends a Casework Request per group of clients, so three can
+    be open at once). Each of those gets its game task number appended, CASEWORK_MOTEL#41, so every
+    active task can be named; resolve_task_ref accepts either form."""
+    base = {t.get("taskId"): task_token(t) for t in tasks}
+    n = Counter(base.values())
+    return {tid: tok if n[tok] == 1 else f"{tok}#{tid}" for tid, tok in base.items()}
+
+
+def resolve_task_ref(tasks, ref) -> int:
+    """The taskId a model means by `ref`: a token shown by task_tokens (FOOD_CTRINITY or
+    CASEWORK_MOTEL#41) or the game's task number. A bare token shared by several active tasks is
+    an error naming them, never a guess. Raises ValueError."""
+    raw = str(ref).strip().strip("[]")
+    by_id = {int(t["taskId"]): t for t in tasks if t.get("taskId") is not None}
+    try:
+        tid = int(float(raw))
+    except ValueError:
+        tid = None
+    if tid is None:
+        base, _, num = raw.partition("#")
+        if num.strip().isdigit():
+            n = int(num)
+            if n in by_id and task_token(by_id[n]).upper() == base.strip().upper():
+                return n
+        else:
+            hits = [i for i, t in by_id.items() if task_token(t).upper() == raw.upper()]
+            if len(hits) == 1:
+                return hits[0]
+            if hits:
+                raise ValueError(f"{raw!r} names {len(hits)} active tasks; use one of "
+                                 + ", ".join(f"{raw}#{i}" for i in sorted(hits)))
+    elif tid in by_id:
+        return tid
+    raise ValueError(f"no active task {raw!r} this turn")
 
 
 # Which officer owns a task. The game assigns this when it creates the task but does not export

@@ -22,7 +22,8 @@ TOOLS (defined in cora.tools; this module resolves and runs them against cora.ac
   deconstruct(site)       tear down a built facility (case-insensitive substring of its name).
                                                                     -> one deconstruction action
   task(task_id, choice_id) answer an active task; task_id is the bracketed token from the
-                          observation (or the raw integer id).      -> one task choice
+                          observation (CASEWORK_MOTEL#41 when tasks share a token; or the raw
+                          integer id).                              -> one task choice
   transfer(resource, source, dest, qty)  only when the env enumerates manual transfers.
 
 ORDER
@@ -46,7 +47,7 @@ from dataclasses import dataclass, field
 from typing import Any, Iterable, Optional
 
 from cora.actions import assignment_action, staff_plan, staffing_need
-from cora.observation import task_token
+from cora.observation import resolve_task_ref
 
 ORDER = {"task": 0, "deconstruct": 1, "build": 2, "hire": 3, "train": 4, "staff": 5, "transfer": 6}
 
@@ -132,6 +133,7 @@ class TurnResolver:
         self.free_tr = wf.get("freeTrainedWorkers", 0) or 0
         self.free_un = wf.get("freeUntrainedWorkers", 0) or 0
         self.sites_taken = set()            # build sites claimed by earlier calls this turn
+        self.tasks_answered = set()         # a task is answered once (TaskSystem.CanAnswer)
         self.facilities = {f["facilityName"]: f for f in (self.gs.get("mapState", {}) or {}).get("facilities", []) or []
                            if f.get("facilityName")}
         self.need = {f["facilityName"]: staffing_need(f)
@@ -216,16 +218,10 @@ class TurnResolver:
 
     def task(self, r, task_id, choice_id):
         raw = str(task_id).strip().strip("[]")
-        tasks = self.gs.get("allActiveTasks", []) or []
-        tid = None
-        try:
-            tid = int(float(raw))
-        except ValueError:
-            for t in tasks:
-                if task_token(t) == raw:
-                    tid = int(t["taskId"]); break
-        if tid is None or not any(int(t.get("taskId", -1)) == tid for t in tasks):
-            raise ValueError(f"no active task {raw!r} this turn")
+        tid = resolve_task_ref(self.gs.get("allActiveTasks", []) or [], raw)
+        if tid in self.tasks_answered:
+            raise ValueError(f"task {raw!r} is already answered by an earlier call this turn")
+        self.tasks_answered.add(tid)
         r.choice = {"taskId": tid, "choiceId": _int(choice_id, "choice_id")}
         r.summary = f"task {raw} choice {r.choice['choiceId']}"
 

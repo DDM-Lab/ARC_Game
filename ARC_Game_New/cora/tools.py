@@ -90,7 +90,7 @@ TOOLS: list[dict] = [
                         "choices are enumerated at the top of each observation."),
         "params": [
             # The id form must match what the observation renders (stable tokens, cora.observation
-            # task_token). A schema conditions the model harder than prose: when this example
+            # task_tokens). A schema conditions the model harder than prose: when this example
             # disagreed with the observation, the example ids were the most-rejected ids.
             ("task_id", {"type": "string", "description": _TASK_ID_DESC}),
             # NOT 0-based and NOT contiguous: choice ids are the ids Unity prints for that task this
