@@ -351441,7 +351441,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   serverUrl: https://cora_game.dev.ddmlab.com/cgi-bin/save_game_logs.py
-  requestTimeout: 30
+  requestTimeout: 120
 --- !u!114 &1910196515
 MonoBehaviour:
   m_ObjectHideFlags: 0

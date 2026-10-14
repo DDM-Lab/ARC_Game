@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 1,
+  "numbers": [
+    {
+      "in": "0",
+      "out": "0"
+    },
+    {
+      "in": "-0",
+      "out": "0"
+    },
+    {
+      "in": "-0.0",
+      "out": "0"
+    },
+    {
+      "in": "0.0000015",
+      "out": "0.000002"
+    },
+    {
+      "in": "0.0000025",
+      "out": "0.000002"
+    },
+    {
+      "in": "0.0000035",
+      "out": "0.000004"
+    },
+    {
+      "in": "-0.0000015",
+      "out": "-0.000002"
+    },
+    {
+      "in": "0.0000004",
+      "out": "0"
+    },
+    {
+      "in": "-0.0000004",
+      "out": "0"
+    },
+    {
+      "in": "-2.5e-7",
+      "out": "0"
+    },
+    {
+      "in": "1E-05",
+      "out": "0.000010"
+    },
+    {
+      "in": "12.5",
+      "out": "12.500000"
+    },
+    {
+      "in": "5.0",
+      "out": "5"
+    },
+    {
+      "in": "5",
+      "out": "5"
+    },
+    {
+      "in": "1E+3",
+      "out": "1000"
+    },
+    {
+      "in": "1.23456789",
+      "out": "1.234568"
+    },
+    {
+      "in": "0.1234565",
+      "out": "0.123456"
+    },
+    {
+      "in": "0.1234575",
+      "out": "0.123458"
+    },
+    {
+      "in": "-0.1234565",
+      "out": "-0.123456"
+    }
+  ],
+  "numberErrors": [
+    "3.4028235E+38",
+    "1e400",
+    "NaN",
+    "-Infinity"
+  ],
+  "json": [
+    {
+      "in": "{\"b\":1,\"a\":[1.50,true,null,\"x\\n\\u0001\"]}",
+      "out": "{\"a\":[1.500000,true,null,\"x\\n\\u0001\"],\"b\":1}"
+    },
+    {
+      "in": "{\"q\":\"say \\\"hi\\\" \\\\ done\",\"s\":\"é/\"}",
+      "out": "{\"q\":\"say \\\"hi\\\" \\\\ done\",\"s\":\"é/\"}"
+    },
+    {
+      "in": "[]",
+      "out": "[]"
+    },
+    {
+      "in": "{}",
+      "out": "{}"
+    },
+    {
+      "in": "\"\\t\"",
+      "out": "\"\\t\""
+    },
+    {
+      "in": "-1E-7",
+      "out": "0"
+    },
+    {
+      "in": "[ 1 , 2 ]",
+      "out": "[1,2]"
+    }
+  ],
+  "jsonErrors": [
+    "{\"a\":1,\"a\":2}",
+    "[1,]",
+    "\"abc",
+    "{\"a\":1} x",
+    "\"a\u0001b\""
+  ],
+  "snapshots": [
+    {
+      "fixture": "tests/replay/fixtures/snapshot_synthetic.json",
+      "out": "{\"budgetAllocations\":{\"pending\":{\"2\":{\"allocId\":2,\"amount\":250,\"delayRounds\":1,\"label\":\"Training\"},\"7\":{\"allocId\":7,\"amount\":500,\"delayRounds\":2,\"label\":\"Shelter expansion\"}}},\"buildings\":{\"12\":{\"buildingName\":\"Shelter A\",\"buildingType\":\"Shelter\",\"capacity\":80,\"constructionProgress\":0.333333,\"constructionRoundsElapsed\":1,\"constructionRoundsTotal\":3,\"deconstructionProgress\":0,\"deconstructionRoundsElapsed\":0,\"deconstructionRoundsTotal\":0,\"operationalEfficiency\":0,\"originalSiteId\":12,\"requiredWorkforce\":1,\"status\":\"UnderConstruction\",\"storage\":{\"resourceAmounts\":[],\"resourceTypes\":[]}},\"40\":{\"buildingName\":\"Kitchen B\",\"buildingType\":\"Kitchen\",\"capacity\":300,\"constructionProgress\":1,\"constructionRoundsElapsed\":2,\"constructionRoundsTotal\":2,\"deconstructionProgress\":0,\"deconstructionRoundsElapsed\":0,\"deconstructionRoundsTotal\":0,\"operationalEfficiency\":0.750000,\"originalSiteId\":40,\"requiredWorkforce\":2,\"status\":\"Operational\",\"storage\":{\"resourceAmounts\":[120],\"resourceTypes\":[\"Food\"]}}},\"clients\":{\"groups\":{\"3\":{\"arrivalRound\":5,\"arrivalTime\":0.500000,\"assignedDepartureRound\":9,\"caseworkRequestGenerated\":false,\"clientCount\":4,\"clientsWithCaseworkNeed\":1,\"clientsWithoutCaseworkNeed\":3,\"facilityName\":\"Shelter A\",\"groupId\":3,\"groupName\":\"Group C\",\"hasDeparted\":false,\"isOverstaying\":false,\"overstayRounds\":0}},\"nextGroupId\":4},\"clock\":{\"currentDay\":2,\"currentTimeSegment\":1,\"isWaitingForReport\":false,\"lastDay\":8,\"roundsPerDay\":4},\"dailyReport\":{\"dayStartBudget\":10000,\"dayStartEfficiency\":0,\"dayStartPopulation\":1800,\"dayStartSatisfaction\":0,\"foodPacksWasted\":3.500000,\"roundsElapsed\":4},\"deliveries\":{\"active\":{\"4\":{\"cargoType\":\"Food\",\"destinationName\":\"Shelter A\",\"estimatedTimeSeconds\":40,\"isUrgent\":false,\"priority\":1,\"quantity\":30,\"sourceName\":\"Warehouse\",\"taskId\":4,\"timeCreated\":12.500000}},\"completed\":{},\"nextTaskId\":7,\"pending\":{\"6\":{\"cargoType\":\"Food\",\"destinationName\":\"Motel\",\"estimatedTimeSeconds\":0,\"isUrgent\":true,\"priority\":0,\"quantity\":10,\"sourceName\":\"Kitchen B\",\"taskId\":6,\"timeCreated\":30}}},\"economy\":{\"currentBudget\":9500,\"currentEfficiency\":12.500000,\"currentSatisfaction\":0.000002},\"flood\":{\"floodChangeThisRound\":0,\"lastWeatherType\":\"Rain\",\"previousFloodCount\":2,\"tileX\":[3,4],\"tileY\":[7,7],\"tileZ\":[0,0]},\"formatVersion\":1,\"prebuilt\":{\"Community 1\":{\"buildingName\":\"Community 1\",\"storage\":{\"resourceAmounts\":[],\"resourceTypes\":[]}},\"Motel\":{\"buildingName\":\"Motel\",\"storage\":{\"resourceAmounts\":[40],\"resourceTypes\":[\"Food\"]}}},\"relocations\":{\"walks\":{\"3\":{\"destinationName\":\"Motel\",\"groupName\":\"Group C\",\"parentTaskId\":-1,\"quantity\":2,\"roundsRemaining\":1,\"sourceName\":\"Shelter A\",\"walkId\":3}}},\"rewardMetrics\":{\"caseworkProcessed\":0,\"caseworkRequested\":0,\"cumIdle\":1,\"cumTraining\":0,\"cumWorking\":3,\"foodFulfilled\":1,\"foodResolved\":1,\"lodgingFulfilled\":0,\"lodgingResolved\":0,\"roundsCompleted\":4},\"rng\":{\"captured\":true,\"unityRandomStateJson\":\"{\\\"s0\\\":1,\\\"s1\\\":2,\\\"s2\\\":3,\\\"s3\\\":4}\"},\"schemaVersion\":1,\"spend\":{\"casework\":0,\"food\":100,\"lodging\":0,\"worker\":6500},\"tasks\":{\"activeTasks\":{\"5\":{\"roundsRemaining\":1,\"selectedChoiceId\":0,\"stableTaskId\":\"food-1\",\"taskId\":2,\"title\":\"Food request\",\"uid\":5},\"9\":{\"roundsRemaining\":2,\"selectedChoiceId\":-1,\"stableTaskId\":\"flood-2\",\"taskId\":1,\"title\":\"Flood report\",\"uid\":9}},\"completedTasks\":{},\"currEmergencyTaskCount\":1,\"currExternalRelationCount\":0,\"deliveryIds\":[4],\"deliveryTaskIds\":[4],\"lastEmergencyTaskRound\":5,\"nextTaskId\":3,\"shownAlertIds\":[\"alert.flood\"]},\"vehicles\":{\"Vehicle 1\":{\"cargoAmounts\":[],\"cargoTypes\":[],\"currentTaskId\":-1,\"isDamaged\":false,\"onDelivery\":false,\"position\":{\"x\":0,\"y\":0,\"z\":0},\"status\":\"Idle\",\"step\":1,\"vehicleName\":\"Vehicle 1\"},\"Vehicle 2\":{\"cargoAmounts\":[30],\"cargoTypes\":[\"Food\"],\"currentTaskId\":4,\"isDamaged\":false,\"onDelivery\":true,\"position\":{\"x\":1.500000,\"y\":0,\"z\":-0.250000},\"status\":\"Delivering\",\"step\":2,\"vehicleName\":\"Vehicle 2\"}},\"weather\":{\"current\":\"Rain\",\"start\":\"Clear\"},\"workforce\":{\"hiredCounts\":[2],\"hiredDays\":[1],\"newWorkersHiredToday\":0,\"nextWorkerId\":11,\"workers\":{\"1\":{\"assignedBuildingId\":-1,\"trainedStatus\":\"Free\",\"untrainedStatus\":\"Working\",\"workerId\":1,\"workerType\":\"Untrained\"},\"10\":{\"assignedBuildingId\":40,\"trainedStatus\":\"Working\",\"untrainedStatus\":\"Free\",\"workerId\":10,\"workerType\":\"Trained\"},\"2\":{\"assignedBuildingId\":-1,\"trainedStatus\":\"Free\",\"untrainedStatus\":\"Free\",\"workerId\":2,\"workerType\":\"Untrained\"}}}}",
+      "hash": "688d466f21de9065db286e49fdf699f823003d13309db42faf24f610adf9ce96"
+    }
+  ],
+  "snapshotInline": [
+    {
+      "in": "{\"createdUtc\":\"2026-01-01T00:00:00Z\",\"seed\":5}",
+      "out": "{\"schemaVersion\":1}"
+    }
+  ],
+  "snapshotErrors": [
+    "[]",
+    "{\"workforce\":{\"workers\":[{\"workerId\":1},{\"workerId\":1}]}}",
+    "{\"tasks\":{\"activeTasks\":[{\"taskId\":1}]}}",
+    "{\"buildings\":[5]}",
+    "{\"vehicles\":[{\"vehicleName\":true}]}"
+  ]
+}

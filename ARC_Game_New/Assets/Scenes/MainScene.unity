@@ -9342,6 +9342,10 @@ PrefabInstance:
       propertyPath: m_AnchoredPosition.y
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 7879365818082844962, guid: e361437e5ef494ea39373e5b3b41eb13, type: 3}
+      propertyPath: m_AnchorMax.y
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 7884207450014851420, guid: e361437e5ef494ea39373e5b3b41eb13, type: 3}
       propertyPath: m_AnchorMax.y
       value: 0
@@ -9720,6 +9724,10 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8443698428770185261, guid: e361437e5ef494ea39373e5b3b41eb13, type: 3}
       propertyPath: m_AnchoredPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8445719688099681741, guid: e361437e5ef494ea39373e5b3b41eb13, type: 3}
+      propertyPath: m_AnchorMax.y
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8494293141391960463, guid: e361437e5ef494ea39373e5b3b41eb13, type: 3}
@@ -21851,10 +21859,10 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 477889595}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 0}
-  m_AnchorMax: {x: 0, y: 0}
-  m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 0, y: 0}
+  m_AnchorMin: {x: 0, y: 1}
+  m_AnchorMax: {x: 0, y: 1}
+  m_AnchoredPosition: {x: 192.5, y: -34.5}
+  m_SizeDelta: {x: 375, y: 49}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &336536752
 MonoBehaviour:
@@ -82436,7 +82444,16 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   serverUrl: https://cora_game.dev.ddmlab.com/cgi-bin/save_game_logs.py
-  requestTimeout: 30
+  requestTimeout: 120
+  maxAttemptSeconds: 600
+  compressUploads: 1
+  finalRetryDelaysSeconds:
+  - 5
+  - 15
+  - 30
+  checkpointRetryDelaysSeconds:
+  - 30
+  - 90
   requireServerAck: 1
 --- !u!1 &1275284033
 GameObject:
