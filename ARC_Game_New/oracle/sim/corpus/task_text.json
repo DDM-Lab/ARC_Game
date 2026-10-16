@@ -1,0 +1,186 @@
+{
+ "Budget_Advisory": {
+  "choices": {
+   "0": {
+    "choiceText": "Request pre-disaster funding ($50,000) - 2 rounds delay"
+   },
+   "1": {
+    "choiceText": "Request pre-disaster funding ($100,000) - 4 rounds delay"
+   }
+  },
+  "description": "Weather Alert: Major storm incoming!",
+  "title": "Storm Funding Advisory"
+ },
+ "Budget_Allocation": {
+  "choices": {
+   "0": {
+    "choiceText": "Receive $5000 Budget"
+   }
+  },
+  "description": "Daily budget report ready.",
+  "title": "Daily Budget Allocation"
+ },
+ "Budget_Emergency": {
+  "choices": {
+   "0": {
+    "choiceText": "Urgent allocation ($5,000) - Fast approval"
+   },
+   "1": {
+    "choiceText": "Emergency allocation ($15,000) - 2 rounds delay"
+   },
+   "2": {
+    "choiceText": "Disaster Relief Fund ($30,000) - 3 rounds delay"
+   }
+  },
+  "description": "CRITICAL: We've run out of funds!",
+  "title": "Emergency Budget Crisis"
+ },
+ "Community_Flood_Damge": {
+  "choices": {
+   "0": {
+    "choiceText": "Send to Shelters"
+   },
+   "1": {
+    "choiceText": "Send to Motel"
+   }
+  },
+  "description": "Flood has affected [facility_name]. Emergency relocation 100 residents required.",
+  "title": "[facility_name_plain] Flood Damage Evacuation"
+ },
+ "Community_FoodRequest": {
+  "choices": {
+   "0": {
+    "choiceText": "Request [food_amount] meals from kitchens"
+   },
+   "2": {
+    "choiceText": "Rapid Response Vehicle delivers [food_amount] fast-food meals (immediate). "
+   }
+  },
+  "description": "[facility_name] has requested food supplies. We can either send prepared meals from an available kitchen or use a quick but more costly fast-food delivery. \r\r",
+  "title": "[facility_name_plain] Food Request"
+ },
+ "Community_TransportRequest": {
+  "choices": {
+   "0": {
+    "choiceText": "Send to Shelters"
+   },
+   "1": {
+    "choiceText": "Send to Motel"
+   }
+  },
+  "description": "100 clients from [facility_name] requested relocation. Choose where to send them based on available options.\r",
+  "title": "[facility_name_plain] Relocation Request"
+ },
+ "Flood_Alert": {
+  "choices": {},
+  "description": "Flood levels are rising. We should prepare for potential evacuations.",
+  "title": "Flood Alert - Rising Water"
+ },
+ "Motel_FoodRequest_First": {
+  "choices": {
+   "0": {
+    "choiceText": "Fulfill [food_amount] food packs for the current round."
+   },
+   "1": {
+    "choiceText": "Deliver 2 x [food_amount] meals."
+   },
+   "2": {
+    "choiceText": "Rapid Response Vehicle deliver [food_amount] meals immediately ($72/meal)."
+   },
+   "3": {
+    "choiceText": "Rapid Response Vehicle deliver 2x[food_amount] meals immediately ($72/meal)."
+   }
+  },
+  "description": "[facility_name] has requested [food_amount] meals. We can either send prepared meals from an available kitchen or use a quick but more costly fast-food delivery. We can also choose to fulfill the follow-up food request now, allowing us to plan ahead and satisfy both requests at once, or fulfill only the current round’s demand.\r\r",
+  "title": "[facility_name_plain] Food Request"
+ },
+ "Motel_FoodRequest_Second": {
+  "choices": {
+   "0": {
+    "choiceText": "Fulfill [food_amount] meals for the current round."
+   },
+   "2": {
+    "choiceText": "Rapid Response Vehicle deliver [food_amount] meals immediately ($72/meal)."
+   }
+  },
+  "description": "[facility_name] has requested food supplies. We can either send prepared meals from an available kitchen or use a quick but more costly fast-food delivery. We can also choose to fulfill the follow-up food request now, allowing us to plan ahead and satisfy both requests at once, or fulfill only the current round’s demand.\r\r",
+  "title": "[facility_name_plain] Follow-up Food Request"
+ },
+ "Offboarding_alert_day6": {
+  "choices": {},
+  "description": "Game Will End on Day 8.",
+  "title": "Alert - Game Will End on Day 8"
+ },
+ "Offboarding_alert_day7": {
+  "choices": {},
+  "description": "Game Will End on Day 8.",
+  "title": "Alert - Game Will End on Day 8"
+ },
+ "Satisfaction_Alert": {
+  "choices": {},
+  "description": "Satisfaction has dropped significantly.",
+  "title": "Satisfaction Declining"
+ },
+ "Shelter_Flood_Damage": {
+  "choices": {
+   "0": {
+    "choiceText": "Evacuate all to other shelters"
+   },
+   "1": {
+    "choiceText": "Evacuate all to Motel"
+   }
+  },
+  "description": "[facility_name] has been severely damaged by flood water. We need to relocate the residents immediately.",
+  "title": "[facility_name_plain] Flood Damage Relocation"
+ },
+ "Shelter_FoodRequest_First": {
+  "choices": {
+   "0": {
+    "choiceText": "Fulfill [food_amount] meals for the current round."
+   },
+   "1": {
+    "choiceText": "Deliver 2 x [food_amount] meals."
+   },
+   "2": {
+    "choiceText": "Rapid Response Vehicle deliver [food_amount] meals immediately ($72/meal)."
+   },
+   "3": {
+    "choiceText": "Rapid Response Vehicle deliver 2x[food_amount] meals immediately ($72/meal)."
+   }
+  },
+  "description": "[facility_name] has requested [food_amount] meals. We can either send prepared meals from an available kitchen or use a quick but more costly fast-food delivery. We can also choose to fulfill the follow-up food request now, allowing us to plan ahead and satisfy both requests at once, or fulfill only the current round’s demand.\r\r",
+  "title": "[facility_name_plain] Food Request"
+ },
+ "Shelter_FoodRequest_Second": {
+  "choices": {
+   "0": {
+    "choiceText": "Fulfill [food_amount] meals for the current round."
+   },
+   "2": {
+    "choiceText": "Rapid Response Vehicle deliver [food_amount] meals immediately ($72/meal)."
+   }
+  },
+  "description": "[facility_name] has requested food supplies. We can either send prepared meals from an available kitchen or use a quick but more costly fast-food delivery. We can also choose to fulfill the follow-up food request now, allowing us to plan ahead and satisfy both requests at once, or fulfill only the current round’s demand.\r\r",
+  "title": "[facility_name_plain] Follow-up Food Request"
+ },
+ "Worker_BadRatio": {
+  "choices": {},
+  "description": "High ratio of untrained volunteers detected. Training programs recommended.",
+  "title": "Training Recommendation Alert"
+ },
+ "Worker_NoAvaliable": {
+  "choices": {},
+  "description": "Facility requires workers but none are available. External recruitment needed.",
+  "title": "Worker Shortage Advice"
+ },
+ "Worker_TooMany_Idle": {
+  "choices": {},
+  "description": "High number of idle untrained workers detected. Training recommendations available.",
+  "title": "Workforce Optimization Alert"
+ },
+ "Worker_TooMany_Idle_General": {
+  "choices": {},
+  "description": "High number of idle workers detected. Training recommendations available.",
+  "title": "Workforce Optimization General Alert"
+ }
+}
