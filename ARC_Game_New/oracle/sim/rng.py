@@ -82,6 +82,11 @@ class UnityRandom:
         r.draws = self.draws
         return r
 
+    def stream(self, name: str, key: int) -> "UnityRandom":
+        """The stream a draw site uses (see StreamedRandom). Unity has one global stream, so the
+        game itself always draws from it, in order: parity is untouched."""
+        return self
+
     def next_uint(self) -> int:
         """One draw. Hot path: words in locals, one store back."""
         x, y, z, w = self.s0, self.s1, self.s2, self.s3
@@ -282,3 +287,44 @@ def game_start(seed: int) -> "UnityRandom":
         r.next_uint()
     r.draws = 0
     return r
+
+
+class StreamedRandom:
+    """A planner's imagined world with one stream per random source and round, for search with
+    common random numbers. Each (source, key) pair -- e.g. ("flood", round 7) -- gets its own
+    UnityRandom seeded from (base, source, key), so two worlds with the same base see the same
+    floods, weather, arrivals and task rolls in each round even when their players' actions
+    consumed a different number of draws. Unity's single stream has no such alignment (two
+    different turns desynchronise it within a round or two), which is why the search's sibling
+    comparisons on a shared base barely shared anything. Not Unity's distribution in detail (the
+    draws are the same kind, only the stream they come from differs), so it is for planning only;
+    a draw site not yet routed through stream() uses the "misc" stream."""
+
+    __slots__ = ("base", "streams", "misc")
+
+    def __init__(self, base: int):
+        self.base, self.streams = int(base) & M32, {}
+        self.misc = UnityRandom(seed=self._seed("misc", 0))
+
+    def _seed(self, name, key):
+        import zlib
+        return zlib.crc32(f"{self.base}/{name}/{key}".encode())
+
+    def stream(self, name: str, key: int) -> UnityRandom:
+        r = self.streams.get((name, key))
+        if r is None:
+            r = self.streams[(name, key)] = UnityRandom(seed=self._seed(name, key))
+        return r
+
+    def clone(self) -> "StreamedRandom":
+        r = StreamedRandom.__new__(StreamedRandom)
+        r.base, r.misc = self.base, self.misc.clone()
+        r.streams = {k: v.clone() for k, v in self.streams.items()}
+        return r
+
+    def get_state(self):
+        return self.misc.get_state()
+
+    def __getattr__(self, attr):          # value(), range_int(), ... on the misc stream
+        return getattr(self.misc, attr)
+

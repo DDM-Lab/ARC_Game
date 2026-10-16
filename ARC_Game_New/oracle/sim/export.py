@@ -13,10 +13,16 @@ departure alerts, morning reports) carry the texts their C# constructors write.
 from __future__ import annotations
 
 import glob
+import json
 import os
 
 from . import paths as P
 import oracle.sim.sim as S
+
+# The surrogate exported every choice as feasible until 2026-10-16; Unity marks the ones the
+# player's panel greys out (_feasibility). False restores the old export (EXPORT_VERSION 1).
+FEASIBILITY = os.environ.get("CORA_SIM_FEASIBILITY", "1") != "0"
+EXPORT_VERSION = 2 if FEASIBILITY else 1
 from .economy import C as _C, REQUIRED_WORKFORCE
 
 # ── the TaskData assets: text templates and the choice fields the RPC export lacks ──────
@@ -28,15 +34,12 @@ def _assets() -> dict:
     """{taskId: {"description", "choices": {choiceId: {"choiceText", "destinationType", ...}}}}"""
     global _ASSETS
     if _ASSETS is None:
-        import yaml
-        out = {}
-        for path in glob.glob(os.path.join(P.ROOT, "Assets/Scripts/Tasks/TaskData/*.asset")):
-            txt = open(path, encoding="utf-8").read()
-            d = yaml.safe_load(txt[txt.index("MonoBehaviour:"):])["MonoBehaviour"]
-            out[d.get("taskId")] = {
-                "title": d.get("taskTitle") or "", "description": d.get("description") or "",
-                "choices": {c.get("choiceId"): c for c in d.get("agentChoices") or []}}
-        _ASSETS = out
+        # Generated from the TaskData assets by oracle.sim.export_assets (corpus/task_text.json),
+        # so the surrogate needs no Unity project at run time.
+        raw = json.load(open(os.path.join(P.PKG, "corpus", "task_text.json"), encoding="utf-8"))
+        _ASSETS = {tid: {"title": t["title"], "description": t["description"],
+                         "choices": {int(cid): c for cid, c in t["choices"].items()}}
+                   for tid, t in raw.items()}
     return _ASSETS
 
 
@@ -95,8 +98,24 @@ def _built(w):
     return built[::-1], pre
 
 
+def _unloading(w):
+    """Deliveries that unloaded on the +35 paused frame: still Active when the state is exported
+    (CompleteDelivery is +36), so they still hold their reservations there (Fleet.run_epilogue)."""
+    return getattr(w.tasks.fleet, "export_unloading", None) or []
+
+
+def _unloading_to(w, name) -> int:
+    """Population still reserved incoming at `name` by an unloading delivery."""
+    return sum(p[1] for p in _unloading(w) if str(p[2] or "") in (name, "Shelter:" + name))
+
+
+def _unloading_food_to(w, name) -> int:
+    return sum(p[1] for p in _unloading(w) if str(p[2] or "").startswith("__food__")
+               and str(p[2])[8:].split("|")[0] == name)
+
+
 def _incoming(w, name) -> int:
-    return S._walking_to(w, name) + w.tasks.inbound_to(name)
+    return S._walking_to(w, name) + w.tasks.inbound_to(name) + _unloading_to(w, name)
 
 
 def _facilities(w):
@@ -147,7 +166,10 @@ def _vehicles(w):
     out = []
     for i in reversed(range(n)):           # FindObjectsOfType: Vehicle 4 .. Vehicle 1
         load = f.carrying[i]
-        if f.damaged[i]:
+        snap = getattr(f, "export_status", None)
+        if snap is not None and i < len(snap) and snap[i] != "Damaged" and not f.damaged[i]:
+            status = snap[i]                   # as of the export frame (Fleet.run_epilogue)
+        elif f.damaged[i]:
             status = "Damaged"
         elif load is not None or f.trip[i] is not None:
             status = "InTransit"
@@ -182,7 +204,7 @@ def _space(w, b) -> int:
     """GetDestinationsSorted's effectiveSpace for one destination (no path filter)."""
     res = b.get("resources") or {}
     return max(0, (res.get("populationCapacity") or 0) - (res.get("population") or 0)
-               - w.tasks.inbound_to(b["name"]) - S._walking_to(w, b["name"]))
+               - w.tasks.inbound_to(b["name"]) - _unloading_to(w, b["name"]) - S._walking_to(w, b["name"]))
 
 
 def _has_destination_space(w, src, to_shelter, to_motel) -> bool:
@@ -197,6 +219,96 @@ def _has_destination_space(w, src, to_shelter, to_motel) -> bool:
             if _space(w, b) > 0:
                 return True
     return False
+
+
+def _feasibility(w, c, facility, qty, gone=False, dest=None) -> tuple:
+    """TaskDetailUI.IsChoiceFeasibleFor, the check that greys a choice out in the player's task
+    panel and that the gym exports per choice as (feasible, unavailableReason). Ported literally,
+    reason strings included, because the models read them; it is NOT the execution gate
+    (S._food_can_execute / S._relocation_can_execute decide what an answer does):
+      - a choice that delivers nothing, an immediate food airlift and a send-to-casework choice
+        are always feasible;
+      - a kitchen food delivery (FoodDeliveryHandler.CanExecute) needs need left after the food
+        already inbound, a reachable operational kitchen with unreserved stock, enough
+        unreserved stock everywhere for a requireFullQuantity choice, and an undamaged vehicle;
+      - a relocation (ClientRelocationHandler.CheckFeasibility) needs residents left and some
+        space at the destinations; a road (non-immediate) one also an undamaged vehicle and a
+        flood-free route to a destination with space -- though relocations self-walk since
+        5d922203 and use no vehicle (a game bug, kept for parity).
+    `facility` is the task's triggering facility, `qty` the choice's resolved deliveryQuantity."""
+    if not (c.get("triggersDelivery") or c.get("immediateDelivery")):
+        return True, ""
+    cargo, immediate = c.get("deliveryCargoType"), bool(c.get("immediateDelivery"))
+    undamaged = any(not d for d in w.tasks.fleet.damaged)
+    if cargo == 1:
+        if immediate:
+            return True, ""
+        # FoodDeliveryHandler.CanExecute's destination is FindTriggeringFacility: an operational
+        # building (uct 7021 d24: Shelter Bravo's follow-up food request, its shelter not
+        # operational, "Destination not found" where the port reached the need check).
+        if gone or not facility or w.economy.facility(facility) is None:
+            return False, "Destination not found"
+        # ...and THAT building is the destination: FindTriggeringFacility's substring match can
+        # return another one (uct-f7 1000 7009 d14: Shelter Alpha's request, "Shelter_1" ->
+        # Shelter_11 = Shelter Bravo, "104 meals already inbound" -- Bravo's deliveries).
+        facility = dest or facility
+        inbound = S._food_inbound(w, facility) + _unloading_food_to(w, facility)
+        need = max(0, int(qty) - inbound)
+        if need <= 0:
+            return False, (f"{inbound} meals already inbound \u2014 need is covered" if inbound > 0
+                           else "No food is currently needed here")
+        dst = w._facility_cell(facility)
+        flooded = w.flooded_road_cells()
+        outbound = w.tasks.outbound_by_kitchen()
+        for p in _unloading(w):
+            tag = str(p[2] or "")
+            if tag.startswith("__food__") and "|" in tag:
+                outbound[tag.split("|", 1)[1]] = outbound.get(tag.split("|", 1)[1], 0) + p[1]
+        reachable, total_reachable, raw, effective = False, 0, 0, 0
+        for k in w.economy.buildings:
+            if k["type"] != "Kitchen" or k["status"] != "InUse":
+                continue
+            stock = (k.get("resources") or {}).get("foodPacks") or 0
+            free = max(0, stock - outbound.get(k["name"], 0))
+            raw += stock
+            effective += free
+            src = w._facility_cell(k["name"])
+            if src is None or dst is None or S.roads.path_length(src, dst, flooded) is None:
+                continue
+            reachable = True
+            total_reachable += free
+        if not reachable:
+            return False, "No kitchen is reachable: either none exist on the map, or every route to one is blocked."
+        if total_reachable <= 0:
+            return False, ("All available meals are already scheduled for other deliveries" if raw > 0
+                           else "No meals available across any kitchen")
+        if c.get("requireFullQuantity") and effective < need:
+            return False, ("Not enough food across all kitchens for this request (some meals may already be "
+                           f"scheduled for other deliveries). Available: {effective}, Required: {need}")
+        if not undamaged:
+            return False, "No undamaged vehicle available for food delivery"
+        return True, ""
+    cat = c.get("destinationCategory") or ""
+    if cargo == 0 and cat == "CaseworkSite":
+        return True, ""
+    if cargo == 0:
+        to_motel = cat == "Motel"
+        to_shelter = not to_motel
+        src = w.economy.facility(facility) if facility else None
+        if src is None:
+            return False, "Source facility not found"
+        if ((src.get("resources") or {}).get("population") or 0) <= 0:
+            return False, "No residents left to relocate"
+        label = "shelter/motel" if to_shelter and to_motel else "shelter" if to_shelter else "motel"
+        if sum(n for _, n in S._walk_destinations(w, facility, to_shelter, to_motel, filter_by_path=False)) <= 0:
+            return False, f"No space available at any {label}"
+        if immediate:
+            return True, ""
+        if not undamaged:
+            return False, "No undamaged vehicle available"
+        if not S._walk_destinations(w, facility, to_shelter, to_motel, filter_by_path=True):
+            return False, f"All routes to the {label} are blocked by flooding"
+    return True, ""
 
 
 def _food_storage(b):
@@ -232,11 +344,22 @@ def _task(w, tid, task):
     trig = _trigger(w, affected) if facility else None
     store = _food_storage(trig) if has_pop_food else None
     live_food = int(store.get("outstanding_need") or 0) if store is not None else None
-    # foodAmount set at creation is not kept by the port; the largest authored food quantity
-    # stands in when there is no live need to read (facility gone).
+    # [food_amount] is the LIVE need (GetTaskContextFromTask's LiveFoodNeed override) while
+    # FindTriggeringFacility finds the facility; otherwise GameTask.foodAmount -- set at creation
+    # and by RefreshTaskAgainstLiveState in the round-end/CompleteTask sweeps (sim._sweep_stale_tasks),
+    # so it can be stale (uct 1000 7000 d26: Shelter Echo deconstructing, "25 meals" from the
+    # last sweep, where the port fell back to the authored 100). The first live read stands in
+    # A task generated from the database starts at 0 ("Refreshed live food need ... 0 -> 500"):
+    # one whose facility stopped operating before any sweep read it shows "0 meals" (uct-noop
+    # 7014 d18, Shelter Alpha deconstructing). Without a population-based choice (a community
+    # request) the largest authored quantity stands in.
     gone = trig is None
-    food_amount = live_food if live_food is not None else max(
-        [int(c.get("deliveryQuantity") or 0) for c in spec.get("choices") or [] if c.get("deliveryCargoType") == 1] or [0])
+    amounts = getattr(w, "food_amounts", None) or {}
+    if has_pop_food:
+        food_amount = live_food if live_food is not None else amounts.get(tid, 0)
+    else:
+        food_amount = max([int(c.get("deliveryQuantity") or 0) for c in spec.get("choices") or []
+                           if c.get("deliveryCargoType") == 1] or [0])
     pop_amount = next((int(c.get("deliveryQuantity") or 0) for c in spec.get("choices") or []
                        if c.get("deliveryCargoType") == 0), 0)
 
@@ -274,6 +397,8 @@ def _task(w, tid, task):
                 need = int(trig.get("outstanding_need") or 0)
                 pct = float(c.get("deliveryPercentage") or 0) or 100.0
                 qty = int(round(need * pct / 100.0))
+        feasible, why = (_feasibility(w, c, facility, qty, gone, trig["name"] if trig else None)
+                         if FEASIBILITY else (True, ""))
         choices.append({
             "choiceId": c.get("choiceId"),
             "choiceText": _resolve(text, plain, food_amount, pop_amount),
@@ -282,7 +407,7 @@ def _task(w, tid, task):
             "deliveryQuantity": qty,
             "immediateDelivery": bool(c.get("immediateDelivery")) if delivers else False,
             "triggersDelivery": bool(c.get("triggersDelivery")) if delivers else False,
-            "feasible": True, "unavailableReason": ""})
+            "feasible": feasible, "unavailableReason": why})
     # 1.0.2: a task ClientStayTracker builds in code carries "uid-" + its uid, which equals its
     # taskId in a fresh game process (both counters advance per task); other code-built tasks "".
     stable = (f"uid-{tid}" if def_id == S.CODE_BUILT_TASKS["Casework Request"]

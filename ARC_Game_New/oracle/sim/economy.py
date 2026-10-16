@@ -315,6 +315,12 @@ class Economy:
                             self.report.food_spent(self, -value)
                         elif task_tag == "Lodging":
                             self.report.lodging_spent(self, -value)
+                elif value > 0 and int(budget_delay_rounds) <= 0:
+                    # BudgetAllocationManager.ScheduleAllocation: no delay -> ApplyNow, clamped.
+                    # Queued to the round end, a funding choice landed after the same turn's
+                    # costs, so at the cap it swallowed them (uct-f7 1000 7015 d21: Unity
+                    # $999,999 +5,000 (capped) then -500 training = $999,499; the port $999,999).
+                    self.budget = max(BUDGET_MIN, min(BUDGET_MAX, self.budget + int(value)))
                 elif value > 0:
                     self.pending_budget.append([int(budget_delay_rounds), int(value)])
             # (1.0.2 removed a choice's Satisfaction impact: the score alone moves satisfaction.)
@@ -591,6 +597,16 @@ class Economy:
                     gone.append(b)
         for b in gone:
             b["destroyed"] = True       # Destroy() lands at the end of the frame: see destroy_pending
+            # ...but its WORKERS go back now: BuildingSystem.DeconstructBuilding calls
+            # WorkerSystem.ReturnWorkersFromBuilding inside OnRoundEnd, ahead of the segment
+            # advance's generation pass. Returning them at destroy_pending (after the flood)
+            # left the pass 4 workers short and fired Worker Shortage Advice where Unity did
+            # not (uct-f4 7014 d6: available workforce 1 at the pass in the port, 5 in Unity).
+            self.free_trained += b.get("trained", 0)
+            self.free_untrained += b.get("untrained", 0)
+            self.working_trained -= b.get("trained", 0)
+            self.working_untrained -= b.get("untrained", 0)
+            b["trained"] = b["untrained"] = 0
 
     def destroy_pending(self) -> list:
         """End of the frame a deconstruction completed in: the building is gone and its site an

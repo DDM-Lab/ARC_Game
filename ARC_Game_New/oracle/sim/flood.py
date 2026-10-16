@@ -155,7 +155,8 @@ def _is_edge(p, fs: FloodState):
 
 
 def update_flood(fs: FloodState, fmap: FloodMap, rng, weather: str,
-                 rain_intensity: float, marks=None, stats=None, on_added=None) -> None:
+                 rain_intensity: float, marks=None, stats=None, on_added=None,
+                 on_removed=None) -> None:
     """One round of flood evolution. Mirrors UpdateFlood's branch structure exactly --
     including which branches are SKIPPED, since a skipped branch draws nothing.
 
@@ -265,6 +266,10 @@ def update_flood(fs: FloodState, fmap: FloodMap, rng, weather: str,
                 to_remove.append(p)
         for p in to_remove:
             fs.tiles.discard(p)
+        if to_remove and on_removed is not None:
+            # OnFloodTileRemoved fires per removed tile; nothing is added after the shrink, so
+            # one call against the final set is the same as one per tile.
+            on_removed(fs.tiles)
         if stats is not None:
             stats["removed"] = len(to_remove)
 

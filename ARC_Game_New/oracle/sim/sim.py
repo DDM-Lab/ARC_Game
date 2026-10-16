@@ -57,6 +57,11 @@ _TASK_SPEC[CASEWORK_SPEC_ID] = {
     "taskTag": "BackToHome", "roundsRemaining": 3, "isGlobalTask": False,
     "choices": [
         {"choiceId": 1, "triggersDelivery": True, "immediateDelivery": False,
+         # Population, as GenerateCaseworkTask sets it. Without it the stale-task sweep never
+         # re-read the group, so a casework request for people who had walked away stayed on
+         # the board (search plan 7016 d14: Unity "Auto-resolved task (clients already
+         # relocated): Casework Request" after Shelter_9's flood evacuation; the port kept it).
+         "deliveryCargoType": 0,
          "deliveryQuantity": 0, "budgetDelayRounds": 0, "destinationCategory": "CaseworkSite",
          # main-bugfixes 2a435b4e removed the satisfaction impacts from every code-built
          # task choice: answering casework no longer pays +10, waiting no longer costs -10.
@@ -158,7 +163,7 @@ class World:
                  "round_index", "_trigger_memory", "use_generation",
                  "pending_arrivals", "pending_removals", "_casework_live", "generated_specs", "_alerts_shown", "_pos_cache",
                  "_emergency_count", "_last_emergency_round", "_sourced_now", "_pop_loaded",
-                 "_food_reserved", "deferred_food")
+                 "_food_reserved", "deferred_food", "food_amounts")
 
     def __init__(self, rng, weather, day=1, segment=0, flood=None, fmap=None,
                  facilities_for=None):
@@ -198,6 +203,7 @@ class World:
         self.tasks.on_completed = self._task_completed
         self._sourced_now = {}      # task -> packs already pulled this round
         self.deferred_food = []     # paused-frame food unloads whose completion (+36) is still due
+        self.food_amounts = {}      # task id -> foodAmount as last refreshed (RefreshTaskAgainstLiveState)
         self._pop_loaded = {}       # (task, qty, dest) -> [people aboard, per trip, load order]
         self._food_reserved = 0     # packs promised to orders not yet loaded
         self.round_index = 0
@@ -304,7 +310,7 @@ class World:
             entry = self.generated_specs.get(payload[0])
             if was_open and entry and entry[0] == COMMUNITY_FOOD_SPEC_ID:
                 _community_food_follow_up(self, entry[1])
-            _food_blockage_alert(self, payload)
+            _food_blockage_alert(self, payload, loaded)
             return
         if loaded:
             # StopVehicleDueToFlood -> ReturnCargoToSource: the people go back where they
@@ -351,7 +357,11 @@ class World:
             _SITE_POS = _site_positions()
         # Rebuilt only when the building list changes -- this runs on every trigger context
         # (several times a round) and the static table is ~20 entries that never move.
-        n = len(self.economy.buildings)
+        # Keyed on WHICH buildings stand, not how many: a demolition followed by a build keeps
+        # the count, and a count key left the new building out of the table -- every distance
+        # to it read 0.0, so a newly built Kitchen Charlie was "nearest" to every shelter
+        # (rhea 7004 s18: Unity sent FOOD_S1 from Kitchen_5, the port from Kitchen Charlie).
+        n = tuple((b["name"], b.get("site_id")) for b in self.economy.buildings)
         cached = self._pos_cache
         if cached is not None and cached[0] == n:
             return cached[1]
@@ -489,6 +499,7 @@ class World:
         w._alerts_shown = set(self._alerts_shown)
         w._sourced_now = dict(self._sourced_now)
         w.deferred_food = list(self.deferred_food)
+        w.food_amounts = dict(self.food_amounts)
         w._pop_loaded = {k: list(v) for k, v in self._pop_loaded.items()}
         w._food_reserved = self._food_reserved
         w._emergency_count = self._emergency_count
@@ -639,8 +650,8 @@ def _admits(w: World, spec, facility) -> bool:
 def _pass(w: World, marks):
     """One task-generation pass. Same draws either way; only the outcome differs."""
     if w.use_generation:
-        return generation_pass(w.rng, w.trigger_context(), w.facilities_for, marks=marks)
-    return roll_pass(w.rng, w.facilities_for, marks=marks)
+        return generation_pass(w.rng.stream("tasks", w.round_index), w.trigger_context(), w.facilities_for, marks=marks)
+    return roll_pass(w.rng.stream("tasks", w.round_index), w.facilities_for, marks=marks)
 
 
 
@@ -732,7 +743,7 @@ def _community_depletion_v6(w, chance, amount):
             continue
         res = b.setdefault("resources", {})
         cap = res.get("foodPacksCapacity") or 0
-        if w.rng.value() < chance:
+        if w.rng.stream("food", w.round_index).value() < chance:
             w.economy.report.food(w.economy, needed=amount)     # RecordCommunityFoodDemand
             available = res.get("foodPacks") or 0
             if available > 0:
@@ -771,7 +782,7 @@ def cancel_overnight_food(w) -> None:
     for i, load in enumerate(fleet.carrying):
         if load is not None and str(load[2] or "").startswith("__food__"):
             victims.add(load[0])
-            _return_cargo(w, fleet, i)
+            _return_cargo(w, fleet, i, overnight=True)
     # A TRIP STILL DRIVING TO THE KITCHEN COUNTS TOO. Unity cancels the DELIVERY TASK
     # ("Cancelled active delivery task: Task 3: 100 FoodPacks from Kitchen_0 to Motel"),
     # which is live from CreateDeliveryTask onward -- whether or not LoadCargo has run yet.
@@ -783,7 +794,7 @@ def cancel_overnight_food(w) -> None:
         payload = trip.get("payload")
         if payload is not None and str(payload[2] or "").startswith("__food__"):
             victims.add(payload[0])
-            _return_cargo(w, fleet, i)
+            _return_cargo(w, fleet, i, overnight=True)
     # A STUCK reservation (a dispatch-time no-path cancel that stayed in activeTasks) is an
     # incomplete food delivery too: the overnight sweep cancels it and frees the destination's
     # inbound (bench qwen2.5-3b 7026: Task 2 "cancelled" at f999, the Motel order the next day
@@ -885,7 +896,7 @@ def _tracker(w, marks):
     # CheckClientStayDurations handles one group at a time -- its departure, then its casework
     # roll -- so departure alerts and casework tasks take task ids in group order.
     events = []
-    w.clients.update(w.rng, _unity_round(w), w.economy.counters, marks, generated=events)
+    w.clients.update(w.rng.stream("clients", w.round_index), _unity_round(w), w.economy.counters, marks, generated=events)
     for ev in events:
         if ev[0] == "casework":
             _kind, gid, facility, with_need = ev
@@ -907,7 +918,7 @@ def _tracker(w, marks):
         w.economy.move_population(facility, -count)
         w.economy.motel_pop = w.economy.motel_population
         if count > 0:
-            _departure_alert(w, facility)
+            _departure_alert(w, facility, count)
 
 
 def _walk_destinations(w, source, include_shelters, include_motels, filter_by_path=True):
@@ -1040,15 +1051,48 @@ def _cancel_deliveries_involving(w, name) -> None:
         return tag in (name, "Shelter:" + name)
     w.tasks.stuck = [(p, q) for p, q in w.tasks.stuck if not involves(p)]
     board = w.tasks
+    # The dropped delivery stays in the parent's linkedDeliveryTaskIds but never reaches
+    # completedTasks, so AreAllLinkedDeliveriesComplete is never true again: the parent can
+    # only close by expiring (uct-noop 7009 s17: Trinity's 200-meal order queued 100 from
+    # Kitchen_6 and 100 from Kitchen_10, Kitchen_10's deconstruction cancelled the second, and
+    # task 42 expired Incomplete after the first landed; the port completed it on that landing).
+    for e in board.pending:
+        if involves(e[1]):
+            board.orphaned.add(e[1][0])
     board.pending = [e for e in board.pending if not involves(e[1])]
     fleet = board.fleet
+    parents = []
     for i, trip in enumerate(fleet.trip):
         payload = (trip or {}).get("payload") or fleet.carrying[i]
         if payload is not None and involves(payload):
             _return_cargo(w, fleet, i)
+            parents.append(payload[0])
+    # A delivery on a VEHICLE is cancelled through Vehicle.AbortDelivery -> OnDeliveryCancelled
+    # -> TaskSystem.OnDeliveryTaskCancelled: unlinked from its parent, which -- with nothing
+    # else outstanding -- completes if anything landed and otherwise fails (HandleDeliveryFailure:
+    # Incomplete, and a community food request is re-raised at once). uct-f4 7005 s23: Kitchen
+    # Bravo's deconstruction aborted Vehicle 2's 36 meals for request 92, which went Incomplete
+    # and was followed up at f874, before that round's generation pass created anything.
+    for pid in parents:
+        if board._trips_outstanding(pid):
+            continue
+        task = board.awaiting.get(pid) or board.active.get(pid)
+        if task is None or task.resolved:
+            continue
+        board.awaiting.pop(pid, None)
+        board.active.pop(pid, None)
+        if task.delivered > 0:
+            board.resolve(task, fulfilled=True, counters=w.economy.counters)
+            if board.on_completed is not None:
+                board.on_completed()
+        else:
+            board.resolve(task, fulfilled=False, counters=w.economy.counters)
+            entry = w.generated_specs.get(pid)
+            if entry and entry[0] == COMMUNITY_FOOD_SPEC_ID:
+                _community_food_follow_up(w, entry[1])
 
 
-def _return_cargo(w, fleet, i) -> None:
+def _return_cargo(w, fleet, i, overnight=False) -> None:
     """Vehicle.CancelCurrentTask -> AbortDelivery -> ReturnAllCargoToSource: a cancelled
     delivery is not credited, and whatever the vehicle has aboard goes back into its source
     (AddResource, so only what fits). 5509 MCTS plan, s15: the end-of-day cancel caught 81
@@ -1063,6 +1107,20 @@ def _return_cargo(w, fleet, i) -> None:
     path = trip.get("path")
     if path and trip.get("phase") in ("to_src", "to_dst"):
         idx = len(path) - trip.get("left", len(path))
+        # Only the overnight sweep runs inside EndSimulation, before an after-clock vehicle's
+        # endSim-frame move; a cancel in the planning phase (a deconstruction) comes after it
+        # (uct 7008 s35: Kitchen_2's deconstruction aborted Vehicle 3 at path index 8 of 40 at
+        # f1225, on cell (10, 7); stepping it back put the port's vehicle on (11, 7)).
+        # Every after-clock mover counts here, a leg begun in the paused frames included (mac_raw,
+        # not the epi_leg-exempt moved_after_clock the flood-update stop uses): the day-end cancel
+        # comes before ITS endSim move too (uct-f7e 16000 7005 s31: Vehicle 3, leg marked on the
+        # endSim frame f1069, at index 33 when cancelled at f1108; the port left it at 35).
+        if overnight and trip.get("mac_raw") and idx > 0:
+            # The overnight cancel runs inside EndSimulation; a trip dispatched in an earlier
+            # round would only have made its endSim-frame move after it, so it stops one cell
+            # back (MCTS 10095 s16: Vehicle 1 cancelled en route to Trinity, next leg starts at
+            # (10.5, 1.5); the port parked it a cell further on and lost the vehicle choice).
+            idx -= 1
         if 0 <= idx < len(path):
             fleet.pos[i] = path[idx]
     fleet.carrying[i] = None
@@ -1168,6 +1226,13 @@ def queue_walks(w, task_id, task, facility, demanded,
         removed = -w.economy.move_population(str(facility), -send)
         if removed <= 0:
             continue
+        # QueueSelfWalk -> HandleSelfWalkDeparture: a walk between lodging buildings takes the
+        # walkers out of the source's tracked groups at departure (no casework credit). The
+        # port left them, so an evacuated shelter's group kept rolling caseworkGen while its
+        # people walked away (search plan 7010 d13: Shelter_Flood_Damage, Shelter Echo ->
+        # Shelter Charlie; Unity drew no caseworkGen, the port drew one and the stream split).
+        if src is not None and src["type"] in ("Shelter", "Motel"):
+            w.clients.process_home(str(facility), removed, w.economy.counters, credit=False)
         w.walks.append([rounds, str(facility), name, removed, task_id])
         remaining -= removed
         any_created = True
@@ -1195,7 +1260,7 @@ def tick_walks(w) -> None:
         entry[0] -= 1
     arrived = [e for e in w.walks if e[0] <= 0]
     w.walks = [e for e in w.walks if e[0] > 0]
-    for _r, source, dest, qty, task_id in arrived:
+    for _ai, (_r, source, dest, qty, task_id) in enumerate(arrived):
         delivered = w.economy.move_population(dest, qty)
         if delivered < qty:
             w.economy.move_population(source, qty - delivered)
@@ -1212,8 +1277,13 @@ def tick_walks(w) -> None:
             w.economy.report.lodging(w.economy, satisfied=delivered)   # RecordLodgingSatisfiedToday
         if delivered > 0 and d is not None and d.get("type") in ("Shelter", "Motel"):
             w.pending_arrivals.append((delivered, dest))
-        if task is not None and not any(e[4] == task_id for e in w.walks):
-            w.tasks.awaiting.pop(task_id, None)       # its last walk is in
+        # Its last walk is in -- counting the task's other walks landing THIS round, which a
+        # check of w.walks alone misses (uct-f7 const 7000 s25: task 49's 78 and 22 both
+        # arrived at f877 and Unity credited both late; the port popped the task after the
+        # 78 and the 22 found nothing to credit).
+        if task is not None and not any(e[4] == task_id for e in w.walks) \
+                and not any(e[4] == task_id for e in arrived[_ai + 1:]):
+            w.tasks.awaiting.pop(task_id, None)
 
 
 def _sweep_stale_tasks(w: World) -> None:
@@ -1256,10 +1326,33 @@ def _sweep_stale_tasks(w: World) -> None:
                                                    for i in impacts])
                     w.generated_specs[tid] = (def_id, fac, spec)
             elif (c.get("deliveryCargoType") == 1 and c.get("quantityType") == "PopulationBased"
-                  and (by_type.get(b["type"]) or {}).get("consumptionEnabled")
-                  and not (b.get("outstanding_need") or 0)):
-                _auto_resolve(w, tid, task)
-                break
+                  and (by_type.get(b["type"]) or {}).get("consumptionEnabled")):
+                if not (b.get("outstanding_need") or 0):
+                    _auto_resolve(w, tid, task)
+                    break
+                # ...else foodAmount takes the live need: what the exported text falls back to
+                # once FindTriggeringFacility stops finding the facility (export._task).
+                w.food_amounts[tid] = int(b.get("outstanding_need") or 0)
+
+
+def _refresh_food_amount(w: World, tid) -> None:
+    """TaskDetailUI.ResolveChoice's RefreshTaskAgainstLiveState(task) before acting, its foodAmount
+    half: a population-based food request takes its facility's live need (mcts 10078 d27: task 120
+    answered while Shelter Bravo needed 25, then the shelter deconstructed -- Unity's text kept
+    "25 meals"; the port still held the 100 read when the task was created mid-round)."""
+    entry = w.generated_specs.get(tid)
+    if not entry or not entry[1] or tid not in w.tasks.active:
+        return
+    _def_id, fac, spec = entry
+    if not any(c.get("deliveryCargoType") == 1 and c.get("quantityType") == "PopulationBased"
+               and (c.get("triggersDelivery") or c.get("immediateDelivery")) for c in spec.get("choices") or []):
+        return
+    from .export import _object_name, _trigger
+    b = _trigger(w, _object_name(w, fac))
+    if b is None or not ((_ECON_C.get("storage_by_type") or {}).get(b["type"]) or {}).get("consumptionEnabled"):
+        return
+    if b.get("outstanding_need") or 0:
+        w.food_amounts[tid] = int(b["outstanding_need"])
 
 
 def _auto_resolve(w: World, tid, task) -> None:
@@ -1268,14 +1361,15 @@ def _auto_resolve(w: World, tid, task) -> None:
     task.resolved = True
 
 
-def _departure_alert(w, facility) -> None:
+def _departure_alert(w, facility, count=0) -> None:
     """ClientStayTracker.ShowDepartureAlert: a "Clients Departed" Alert straight through
     TaskSystem.CreateTask. The tracker runs before TaskSystem's ageing on the same invoke, so it
     is aged at birth (as the casework task is)."""
     w.tasks.add(Task(w.tasks.next_id, "None", 0, _ALERT_ROUNDS - 1, task_type="Alert"))
     w.generated_specs[w.tasks.next_id] = (
         "Clients Departed", facility, {"taskId": "", "taskTitle": "Clients Departed",
-                                       "taskType": "Alert", "taskTag": "None", "choices": []})
+                                       "taskType": "Alert", "taskTag": "None", "choices": [],
+                                       "taskDescription": f"{count} clients left {facility} on their own."})
     w.tasks.next_id += 1
 
 
@@ -1304,14 +1398,15 @@ def _create_casework_task(w, gid, facility, with_need):
     w._casework_live[t.task_id] = gid
 
 
-def _restore_vehicles(w, before) -> None:
+def _restore_vehicles(w, before=None) -> None:
     """FloodTaskGenerator.OnFloodTileRemoved -> RestoreVehiclesClearOfFlood: the paid repair
     task is gone on this build (CreateVehicleRepairTask does nothing), so a flood-damaged
     vehicle comes back when a flood tile is removed and the cell it stands on is dry.
-    `before` is the tile set ahead of the update (None when no vehicle was damaged). Unity
-    checks at each removal, mid-update; this checks once against the updated set."""
-    if before is None or not (before - w.flood.tiles):
-        return
+    Driven by update_flood's on_removed: Unity repairs on every removal EVENT, so a tile that
+    spread and then shrank in the same update still triggers it although the net set is
+    unchanged (uct-f7 7025 s23: "Flood tile removed at (3, 6)" and "(4, 5)", Vehicles 4, 2
+    and 1 "Auto-restored"; comparing the tile sets before and after found nothing removed
+    and kept all three damaged)."""
     fleet = w.tasks.fleet
     flooded = w.flooded_road_cells()
     for v, dmg in enumerate(fleet.damaged):
@@ -1323,6 +1418,9 @@ def _settle_deferred(w) -> None:
     """The +36 frame of last round's paused food unloads, run before this turn's first action:
     the community "food used" credit, then the parent's resolution (counters, CompleteTask's
     sweep). Their food was stored at +35 (step_round), so the settled landings are not re-landed."""
+    late = w.tasks.fleet.settle_late_drops() if w.tasks.fleet.late_dropped else []
+    if late:
+        w.tasks.handle_dropped(late, w.economy.counters)
     if not w.deferred_food and not w.economy.food_credit_pending:
         return
     if w.economy.food_credit_pending:
@@ -1347,15 +1445,21 @@ def _stop_flooded_vehicles(w, tiles) -> None:
         w.tasks.handle_dropped(dropped, w.economy.counters)
 
 
-def _food_blockage_alert(w, payload):
+def _food_blockage_alert(w, payload, loaded=0):
     """FloodTaskGenerator.ShowFoodBlockageAlert: TaskSystem.CreateTask("Delivery Blocked by
-    Flood", Alert, <destination>) -- it draws nothing but takes a task id."""
-    dest = str(payload[2] or "")[len("__food__"):].split("|")[0]
+    Flood", Alert, <destination>) -- it draws nothing but takes a task id. Its description names
+    the vehicle (GetVehicleName is already "Vehicle N"), the leg (hasLoadedCargo), the
+    delivery's nominal quantity and both buildings' display names."""
+    dest, _, src = str(payload[2] or "")[len("__food__"):].partition("|")
     title = "Delivery Blocked by Flood"
+    _p, v = w.tasks.fleet.drop_veh.pop(id(payload), (None, None))
+    phase = "en route to drop-off" if loaded else "en route to pick-up"
+    desc = (f"Vehicle Vehicle {v + 1 if v is not None else '?'} was blocked by flooding while {phase} "
+            f"with {payload[1]} meals from {src} to {dest}.")
     w.tasks.add(Task(w.tasks.next_id, "None", 0, _ALERT_ROUNDS, task_type="Alert"))
     w.generated_specs[w.tasks.next_id] = (
         title, dest, {"taskId": "", "taskTitle": title, "taskType": "Alert", "taskTag": "None",
-                      "choices": []})
+                      "taskDescription": desc, "choices": []})
     w.tasks.next_id += 1
 
 
@@ -1465,7 +1569,8 @@ def _sized_for(w, spec, facility):
     choices = spec.get("choices") or []
     if not any(c.get("quantityType") in ("All", "Percentage") for c in choices):
         return spec
-    fac = w.economy.facility(str(facility)) if facility else None
+    # The source is FindTriggeringFacility -> FindFacilityByName, a SUBSTRING match.
+    fac = w.economy.facility(str(_unity_find_facility(w, facility))) if facility else None
     res = (fac.get("resources") or {}) if fac else {}
     # Lodging tasks move people; a food task's All would take the facility's packs.
     key = "foodPacks" if (spec.get("taskTag") == "Food") else "population"
@@ -1524,8 +1629,39 @@ def _create_tasks(w, rolls, day_changed):
         w.tasks.next_id += 1
         w.tasks.add(t)
         w.generated_specs[t.task_id] = (task_id, facility, spec)
+        # CreateTaskFromDatabase(taskData, facility): foodAmount = that facility's GetFoodNeed() at
+        # creation when it eats (uct-noop 7014: Shelter Alpha's request created at f792 with no
+        # need yet, its shelter deconstructing before any sweep refreshed it -> "0 meals").
+        b = w.economy.facility(facility) if facility else None
+        if (b is not None and any(c.get("deliveryCargoType") == 1 and c.get("quantityType") == "PopulationBased"
+                                  for c in spec.get("choices") or [])
+                and ((_ECON_C.get("storage_by_type") or {}).get(b["type"]) or {}).get("consumptionEnabled")):
+            w.food_amounts[t.task_id] = int(b.get("outstanding_need") or 0)
         if tag == "Lodging":                                     # RecordLodgingRequestedToday
             w.economy.report.lodging(w.economy, requested=_requested_clients(spec))
+
+
+_UNITY_BUILDING_PREFIX = {"Kitchen": "Kitchen", "Shelter": "Shelter", "CaseworkSite": "CaseworkSite"}
+
+
+def _unity_find_facility(w, name):
+    """TaskSystem.FindFacilityByName, bug for bug: the first OPERATIONAL Building, in
+    FindObjectsOfType order (newest first), whose name CONTAINS the one asked for -- then the
+    prebuilts. So "Shelter_1" resolves to a newer "Shelter_10" (uct-f6e 7005 s27: "Looking for:
+    'Shelter_1' ... MATCH: Shelter_10", the Flood Damage Relocation sized from Shelter_10's 0
+    people and booked 0 lodging demand where the port booked Shelter_1's 77). A Unity bug the
+    surrogate reproduces so its scores track the build; the exact-name fix belongs in Unity.
+    Returns the port's facility name, or None when nothing matches."""
+    b = w.economy.facility(str(name)) if name else None
+    if not b or b.get("prebuilt") or b.get("site_id") is None or b.get("type") not in _UNITY_BUILDING_PREFIX:
+        return name
+    want = f"{_UNITY_BUILDING_PREFIX[b['type']]}_{b['site_id']}"
+    for c in w.economy.buildings[::-1]:
+        if c.get("prebuilt") or c.get("site_id") is None or c.get("type") not in _UNITY_BUILDING_PREFIX:
+            continue
+        if want in f"{_UNITY_BUILDING_PREFIX[c['type']]}_{c['site_id']}" and c.get("status") == "InUse":
+            return c["name"]
+    return None
 
 
 def _requested_clients(spec) -> int:
@@ -1613,8 +1749,16 @@ def _land(w, _task_id, quantity, destination, credit=True):
             # key: a load arriving after the tick already fed the building is not eaten
             # until the next tick (merge_v4 s14: two 100-pack loads reach a 225-person
             # Motel, the first is eaten, the second sits at 100).
-            w.economy.add_food(dest[len("__food__"):].split("|")[0], sourced,
-                               round_key=w.day * 100 + w.segment, credit=credit)
+            target, _, kitchen = dest[len("__food__"):].partition("|")
+            stored = w.economy.add_food(target, sourced,
+                                        round_key=w.day * 100 + w.segment, credit=credit)
+            # Vehicle.UnloadCargo: what does not fit "is not destroyed: it goes back to the
+            # source" (ReturnCargoToSource, up to the kitchen's own room), and the task's
+            # deliveredQuantity is what fitted (qwen3.5-4b 7031 s15: 23 meals for a full
+            # Community Trinity, "delivered 0", Kitchen_4 0 -> 23). The port dropped it.
+            if stored < sourced and kitchen:
+                w.economy.add_food(kitchen, sourced - stored)
+            sourced = stored
         if task is not None:
             task.delivered = sourced
         return
@@ -1673,6 +1817,18 @@ def _land(w, _task_id, quantity, destination, credit=True):
             if moved:
                 w.pending_arrivals.append((moved, target))
             w.pending_arrivals.append((quantity, target))
+        # THE SOURCE'S GROUPS LEAVE TOO, at the same two call sites: HandlePopulationDelivery
+        # removes the ACTUAL count from a lodging source (shelter/motel, creditCasework false),
+        # and OnVehicleDeliveryCompleted removes the NOMINAL count from any source with the
+        # default creditCasework TRUE -- so an evacuation is counted as casework processed (a
+        # game bug, mirrored). The port registered the arrivals but left the evacuated group
+        # at its old shelter, still rolling caseworkGen there (search plan 7010 d13: Shelter_2
+        # evacuated by Shelter_Flood_Damage; Unity drew no caseworkGen for it, the port did).
+        src_b = w.economy.facility(source) if source else None
+        if src_b is not None and moved and src_b["type"] in ("Shelter", "Motel"):
+            w.clients.process_home(source, moved, w.economy.counters, credit=False)
+        if src_b is not None:
+            w.clients.process_home(source, quantity, w.economy.counters)
         if dest == "Motel":
             w.economy.motel_pop = w.economy.motel_population
     elif dest == "Kitchen":
@@ -1702,7 +1858,7 @@ def _round_end(w: World, marks) -> None:
     _n = len(w.pending_arrivals)
     tick_walks(w)
     for count, facility in w.pending_arrivals[_n:]:
-        w.clients.register_arrival(w.rng, count, _unity_round(w), facility, marks)
+        w.clients.register_arrival(w.rng.stream("arrivals", w.round_index), count, _unity_round(w), facility, marks)
     del w.pending_arrivals[_n:]
     e = w.economy
     e.bill_motel(e.motel_population, ROUNDS_PER_DAY)  # never the legacy `motel_pop` shadow
@@ -1732,9 +1888,28 @@ def _segment_invoke(w: World, marks, rolls, day_changed) -> None:
     w.economy.storage_tick(w.day, w.segment)
 
 
+def _settle_zero_unloads(w: World) -> None:
+    """The zero-length destination legs Fleet.run_epilogue parked: unloaded on +37 and completed
+    on +38, AFTER the export and after the decision's first answers (applied from +37's Update):
+    their reservations still gate those answers (uct-f6 64000 7022 d18: Vehicle 2's 0-cell leg
+    from Kitchen Charlie, Community Charleston's request refused "All available meals are
+    already scheduled for other deliveries"). Landed before the round."""
+    zero = w.tasks.fleet.settle_zero_unloads()
+    if not zero:
+        return
+    for _e in w.tasks.tick_deliveries_only(w.economy.counters, _settling=zero):
+        _n = len(w.pending_arrivals)
+        _land(w, _e[0], _e[1], _e[2])
+        for count, facility in w.pending_arrivals[_n:]:
+            w.clients.register_arrival(w.rng.stream("arrivals", w.round_index), count, _unity_round(w), facility, None)
+        del w.pending_arrivals[_n:]
+        _apply_removals(w)
+
+
 def step(w: World, marks=None, on_flood_enter=None) -> None:
     """Advance to the next decision point: the Day-1 setup, a day rollover, or a round."""
     _settle_deferred(w)
+    _settle_zero_unloads(w)
     if w.day == 1 and w.segment == 0:
         return _day1_skip(w, marks, on_flood_enter)
     if w.segment >= ROUNDS_PER_DAY:
@@ -1753,10 +1928,14 @@ def _day1_skip(w: World, marks, on_flood_enter) -> None:
     cancel_overnight_food(w)
     if on_flood_enter is not None:
         on_flood_enter(w)
-    _before = set(w.flood.tiles) if any(w.tasks.fleet.damaged) else None
-    update_flood(w.flood, w.fmap, w.rng, w.weather, RAIN_INTENSITY[w.weather], marks,
-                 on_added=lambda tiles: _stop_flooded_vehicles(w, tiles))
-    _restore_vehicles(w, _before)
+    # Always, not only when a vehicle is damaged beforehand: one stopped DURING the update
+    # (CheckForBlockedVehicles at an expansion) is restored by a later removal in the same
+    # update (uct 7018 s18: Vehicle 1 "stopped by flood" at f640 inside the update and
+    # dispatched again at f650; the port kept it damaged).
+    _before = set(w.flood.tiles)
+    update_flood(w.flood, w.fmap, w.rng.stream("flood", w.round_index), w.weather, RAIN_INTENSITY[w.weather], marks,
+                 on_added=lambda tiles: _stop_flooded_vehicles(w, tiles),
+                 on_removed=lambda tiles: _restore_vehicles(w))
     _end_of_day_waste(w)
     _destroy_pending(w)
     w.generated = []
@@ -1768,7 +1947,7 @@ def _day_rollover(w: World, marks) -> None:
     at segment 0. Nothing simulates: no driving, no flood, no round-end."""
     w.day += 1
     w.segment = 0
-    w.weather = generate_weather(w.rng, marks=marks)
+    w.weather = generate_weather(w.rng.stream("weather", w.day), marks=marks)
     w.economy.on_day_end(w.day)
     rolls = []
     _segment_invoke(w, marks, rolls, True)
@@ -1823,7 +2002,8 @@ def _daily_report(w: World) -> None:
     w.tasks.add(Task(w.tasks.next_id, "None", 0, _ALERT_ROUNDS, task_type="Alert"))
     w.generated_specs[w.tasks.next_id] = (
         title, "Weather Report", {"taskId": "", "taskTitle": title,
-                                  "taskType": "Alert", "taskTag": "None", "choices": []})
+                                  "taskType": "Alert", "taskTag": "None", "choices": [],
+                                  "taskDescription": "Today's weather and flood outlook"})
     w.tasks.next_id += 1
 
 
@@ -1863,7 +2043,7 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     # -- follows at round:advance (f753). They are stamped with the PRE-advance round
     # ("Round: 15" there), so they register here, before anything advances.
     for count, facility in list(arrivals) + w.pending_arrivals:
-        w.clients.register_arrival(w.rng, count, _unity_round(w), facility, marks)
+        w.clients.register_arrival(w.rng.stream("arrivals", w.round_index), count, _unity_round(w), facility, marks)
     w.pending_arrivals = []
     rolls = []
     # DELIVERIES SIMULATE AT THE HEAD OF THE STEP, BEFORE THE SEGMENT ADVANCE.
@@ -1881,14 +2061,32 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     _late = []
     _late_nominal = []                # OnVehicleDeliveryCompleted groups that fire at +35
     _late_removals = []               # ... and its casework removals, same tick
-    for _e in w.tasks.tick(w.economy.counters):
-        if len(_e) > 3 and _e[3] == "late":
+    w.tasks.fleet.day_end = w.segment + 1 >= ROUNDS_PER_DAY
+    _ticked = w.tasks.tick(w.economy.counters)
+    _tick_frames = list(w.tasks.landed_frames_out)
+
+    def _flush_drops(before=None):
+        # Deferred drops whose frame precedes `before` (all of them when None), in order.
+        board = w.tasks
+        take = [i for i, f in enumerate(board.deferred_frames) if before is None or f <= before]
+        if not take:
+            return
+        dd = [board.deferred_drops[i] for i in take]
+        board.deferred_drops = [d for i, d in enumerate(board.deferred_drops) if i not in take]
+        board.deferred_frames = [f for i, f in enumerate(board.deferred_frames) if i not in take]
+        board.handle_dropped(dd, w.economy.counters)
+
+    for _ti, _e in enumerate(_ticked):
+        _f = _tick_frames[_ti] if _ti < len(_tick_frames) else None
+        if _f is not None and w.tasks.deferred_drops:
+            _flush_drops(_f)
+        if len(_e) > 3 and _e[3] in ("late", "late34"):
             _late.append(_e)          # epilogue unload: after this round's invoke
             continue
         _n = len(w.pending_arrivals)
         _m = len(w.pending_removals)
         _land(w, _e[0], _e[1], _e[2])
-        if len(_e) > 3 and _e[3] == "split":
+        if len(_e) > 3 and _e[3] in ("split", "split33"):
             # Unloaded on the last movement frame: the actual group registers now, the
             # nominal group (queued last by _land) at completion, after the flood.
             if len(w.pending_arrivals) > _n:
@@ -1902,6 +2100,9 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
             # groups and deducts the needy count from the wrong one.
             _apply_removals(w)
     _apply_removals(w)
+    if w.tasks.deferred_drops:
+        # The round's drops that came after its last landing, now that the landings are in.
+        _flush_drops()
     arrivals = w.pending_arrivals          # this step's landings (the planning-phase ones went above)
     w.pending_arrivals = []
     # ARRIVAL STAMP vs UPDATE ROUND. Unity stamps arrivalRound = currentRound at the DELIVERY
@@ -1911,7 +2112,7 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     # short, and Y drives the threshold 10 * 1.5^(Y-1) -- identical randoms, different outcomes.
     for count, facility in arrivals:
         # Unity stamps arrivalRound at the DELIVERY instant, which is still pre-advance.
-        w.clients.register_arrival(w.rng, count, _unity_round(w), facility, marks)
+        w.clients.register_arrival(w.rng.stream("arrivals", w.round_index), count, _unity_round(w), facility, marks)
 
     w.economy.accumulate()            # EndSimulation: metrics, then OnRoundEnd
     _round_end(w, marks)              # OnRoundEnd precedes AdvanceTimeSegment
@@ -1930,9 +2131,6 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     # Client.caseworkNeed/stayDuration draws -> relocation:arrive -> endSim:afterOnRoundEnd
     # -> flood:enter). Walks therefore land, and their groups register with the tracker,
     # before this round's water moves.
-    if w.segment >= ROUNDS_PER_DAY:
-        cancel_overnight_food(w)          # food cannot be delivered overnight
-
     if on_flood_enter is not None:
         on_flood_enter(w)
     # THE FLEET ROUTES AGAINST THE POST-SPREAD FLOOD, and the snapshot is taken after the
@@ -1944,12 +2142,23 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     #
     # The port had this backwards: it snapshotted before generation and before the update,
     # so dispatch routed against water that was already stale by the time vehicles moved.
-    _before = set(w.flood.tiles) if any(w.tasks.fleet.damaged) else None
-    update_flood(w.flood, w.fmap, w.rng, w.weather,
-                 RAIN_INTENSITY[w.weather], marks, on_added=lambda tiles: _stop_flooded_vehicles(w, tiles))
-    _restore_vehicles(w, _before)
+    # Always, not only when a vehicle is damaged beforehand: one stopped DURING the update
+    # (CheckForBlockedVehicles at an expansion) is restored by a later removal in the same
+    # update (uct 7018 s18: Vehicle 1 "stopped by flood" at f640 inside the update and
+    # dispatched again at f650; the port kept it damaged).
+    _before = set(w.flood.tiles)
+    update_flood(w.flood, w.fmap, w.rng.stream("flood", w.round_index), w.weather,
+                 RAIN_INTENSITY[w.weather], marks, on_added=lambda tiles: _stop_flooded_vehicles(w, tiles),
+                 on_removed=lambda tiles: _restore_vehicles(w))
     if w.segment >= ROUNDS_PER_DAY:
-        _end_of_day_waste(w)          # OnSimulationEnded, after the flood update
+        # OnSimulationEnded, AFTER the flood update: the overnight food cancel and then the
+        # end-of-day waste. The cancel used to run before the flood, so a food vehicle the
+        # day's last expansion stops (StopVehicleDueToFlood: cargo discarded, parent failed,
+        # "Delivery Blocked by Flood") was already empty and raised nothing (uct-f6e 7026 s21:
+        # flood:enter, Vehicle 3 blocked with 53 meals for Trinity, task 78, all before
+        # OnSimulationEnded).
+        cancel_overnight_food(w)          # food cannot be delivered overnight
+        _end_of_day_waste(w)
     _destroy_pending(w)
 
     # Deterministic bookkeeping runs after the stochastic phases: deliveries land, tasks
@@ -1972,7 +2181,45 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     # Update runs before the vehicle coroutines on that frame, so a food request expires and
     # is re-raised before its own delivery unloads there, and the late food is not credited
     # to it (MCTS plan 7026 s29 f1240: tasks 61/62 Incomplete, then Vehicle 2 unloads).
+    #
+    # BUT an unload on the endSim frame itself by a trip dispatched in an earlier round
+    # ("late34", Fleet.run_round) happens BEFORE that Update: its coroutine resumes after the
+    # clock's EndSimulation (so after OnRoundEnd and the flood) but in the same frame. Land it
+    # here, ahead of the expiry -- CommunityFoodDepletionManager.HandleCommunityFoodRequestEnded
+    # sizes the follow-up of an expired request from the live shortfall (uct-f6 7002 s14:
+    # "Community Amherst received 100 FoodPacks (2900/3000)" at f521, then "request failed —
+    # immediately following up ... requesting 100" at f522; the port expired first and asked
+    # for 200). Only the UNLOAD is early: OnVehicleDeliveryCompleted runs a frame later, after
+    # that Update's expiry, so the parent's resolution still waits until after expire() (uct
+    # 7023 s24: Amherst received 100 at f862, request 65 expired Incomplete at f863 and its
+    # follow-up spawned; resolving the parent early silenced the follow-up).
+    # The after-clock endSim moves' collisions, against the updated flood (Fleet.run_round).
+    w.tasks.flooded = w.flooded_road_cells()
+    _clock = w.tasks.fleet.settle_clock_collisions(w.tasks.flooded)
+    if _clock:
+        w.tasks.handle_dropped(_clock, w.economy.counters)
+    _endsim = [e for e in w.tasks._late_arrivals if len(e) > 3 and e[3] == "late34"]
+    if _endsim:
+        w.tasks._late_arrivals = [e for e in w.tasks._late_arrivals if e not in _endsim]
+        for _e in _endsim:
+            if _e[1] <= 0:
+                continue
+            _n = len(w.pending_arrivals)
+            _land(w, _e[0], _e[1], _e[2])
+            for count, facility in w.pending_arrivals[_n:]:
+                w.clients.register_arrival(w.rng.stream("arrivals", w.round_index), count, _unity_round(w), facility, marks)
+            del w.pending_arrivals[_n:]
+            _apply_removals(w)
+    _early = [e for e in w.tasks._late_arrivals if len(e) > 3 and e[3] == "split_resolve_early"]
+    if _early:
+        # Completions on the endSim frame, after the clock: before the next Update's expiry
+        # (uct 7021 s14: task 33 Completed at f510; the port expired it first and re-raised it).
+        w.tasks._late_arrivals = [e for e in w.tasks._late_arrivals if e not in _early]
+        w.tasks.tick_deliveries_only(w.economy.counters, _settling=_early)
     _incomplete_penalties(w, w.tasks.expire(w.economy.counters))
+    if _endsim:
+        # The completions, after the expiry; the cargo has already landed above.
+        w.tasks.tick_deliveries_only(w.economy.counters, _settling=_endsim)
     # EPILOGUE LANDINGS. A delivery that unloads on the paused frame after the round
     # lands after the invoke and the flood update, so its people move and its clients spawn
     # HERE -- their caseworkNeed/stayDuration draws follow the flood draws, and the group
@@ -1980,7 +2227,7 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     # marks show (5601 step 30, 6101 step 11). Registered now rather than at the next head so
     # the group precedes the next round's sim-phase arrivals.
     for count, facility in _late_nominal:
-        w.clients.register_arrival(w.rng, count, _unity_round(w), facility, marks)
+        w.clients.register_arrival(w.rng.stream("arrivals", w.round_index), count, _unity_round(w), facility, marks)
     w.pending_removals.extend(_late_removals)
     _apply_removals(w)
     # THE PAUSED FRAMES RUN HERE, against the flood as just updated (Fleet.run_epilogue).
@@ -1992,7 +2239,12 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     # waits for the agent. So it is settled at the start of the next turn (_settle_deferred),
     # before the agent's answers (MCTS plans 7018 s13 and 7026 s29: the unload in the state,
     # foodPacksConsumed and foodResolved one decision later).
-    food = [e for e in w.tasks._late_arrivals if str(e[2] or "").startswith("__food__")]
+    # Only the paused-frame UNLOADS complete after the export. A split landing's completion
+    # (unloaded on frame 34, completed on +35) is before it and settles this turn (uct-f7
+    # const 7000 s18: task 29 unloaded at f614, Completed at f615, counted in that decision's
+    # foodFulfilled; deferring its split_resolve with the food moved it a decision late).
+    food = [e for e in w.tasks._late_arrivals if str(e[2] or "").startswith("__food__")
+            and not (len(e) > 3 and e[3] in ("late34", "split_resolve", "split_resolve_early"))]
     if food:
         w.tasks._late_arrivals = [e for e in w.tasks._late_arrivals if e not in food]
         for e in food:
@@ -2003,7 +2255,7 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
         _n = len(w.pending_arrivals)
         _land(w, _e[0], _e[1], _e[2])
         for count, facility in w.pending_arrivals[_n:]:
-            w.clients.register_arrival(w.rng, count, _unity_round(w), facility, marks)
+            w.clients.register_arrival(w.rng.stream("arrivals", w.round_index), count, _unity_round(w), facility, marks)
         del w.pending_arrivals[_n:]
         _apply_removals(w)
     w.round_index += 1
@@ -2044,6 +2296,7 @@ def answer(w: World, task_id, choice_id) -> bool:
     metrics (1.0.2 samples bed-rounds every round; the old daily sample hid the timing)."""
     _settle_deferred(w)
     task = w.tasks.active.get(task_id)
+    _refresh_food_amount(w, task_id)
     ok = _answer(w, task_id, choice_id)
     # Only a COMPLETED task sweeps: an order left waiting on its delivery is InProgress, not
     # completed, and CompleteTask does not run until that delivery lands (MCTS plan 7001 s25:
@@ -2086,8 +2339,15 @@ def _answer(w: World, task_id, choice_id) -> bool:
     # deconstructing or idle building is "Destination not found" and the answer is refused.
     if _facility and (choice.get("triggersDelivery") or choice.get("immediateDelivery")):
         from .export import _object_name, _trigger
-        if _trigger(w, _object_name(w, _facility)) is None:
+        trig = _trigger(w, _object_name(w, _facility))
+        if trig is None:
             return False
+        # EVERYTHING after this is that building's: FoodDeliveryHandler's need, inbound check and
+        # destination, ClientRelocationHandler's source. FindTriggeringFacility is a substring
+        # match, so once Shelter_10 exists Shelter_1's (Shelter Alpha's) food request is checked
+        # against and delivered to Shelter_10 (search plan 7000 d17: "100 meals already inbound
+        # -- need is covered", the 100 being Shelter Bravo's own order). A game bug, mirrored.
+        _facility = trig["name"]
     # DEMANDED vs SENDABLE. ClientRelocationHandler:
     #     int available = GetPopulation(source);
     #     int toSend    = requestedQuantity > 0 ? Mathf.Min(requestedQuantity, available)
@@ -2352,11 +2612,17 @@ def _answer(w: World, task_id, choice_id) -> bool:
             moved = w.economy.move_population(target, qty)
             if moved:
                 w.economy.report.lodging(w.economy, satisfied=moved)
-            # ClientRelocationHandler does the same double-registration, calling
-            # RegisterClientArrival and HandlePopulationDelivery back to back on one transfer.
+            # 1.0.2 ClientRelocationHandler.ExecuteImmediate: RemoveClientsByQuantity(source,
+            # removed, creditCasework false) at the removal, then -- when anyone arrived --
+            # HandlePopulationDelivery, which removes them again from a lodging source and
+            # registers ONE arrival (its comment: a direct RegisterClientArrival as well
+            # "double-registered every self-walk arrival"). The port registered twice.
+            src_b = w.economy.facility(str(_facility))
+            w.clients.process_home(str(_facility), qty, w.economy.counters, credit=False)
             if moved:
+                if src_b is not None and src_b["type"] in ("Shelter", "Motel"):
+                    w.clients.process_home(str(_facility), moved, w.economy.counters, credit=False)
                 w.pending_arrivals.append((moved, target))
-            w.pending_arrivals.append((qty, target))
             w.economy.motel_pop = w.economy.motel_population
     return True
 
@@ -2387,7 +2653,12 @@ def _food_can_execute(w: World, choice, facility, requested) -> bool:
         total_reachable += free
     if not reachable or total_reachable <= 0:
         return False
-    return not (choice.get("requireFullQuantity") and total < need)
+    if choice.get("requireFullQuantity") and total < need:
+        return False
+    # "At least one vehicle must be capable": FoodDeliveryHandler.CanExecute's last gate
+    # (mcts 7006 s23: all four vehicles Damaged, FOODF_S1 refused "No undamaged vehicle
+    # available for food delivery"; the port queued it).
+    return not all(w.tasks.fleet.damaged)
 
 
 def _answer_casework(w: World, task_id, task, choice, choice_id, facility, demanded) -> bool:
@@ -2563,13 +2834,22 @@ def _answer_multi_shelter_immediate(w: World, task_id, task, choice, choice_id, 
         if len(sites) >= _CASEWORK_DESTS:
             break
     per = max(1, demanded // len(sites)) if sites else 0
+    src_b = w.economy.facility(facility)
+    lodging_src = src_b is not None and src_b["type"] in ("Shelter", "Motel")
     for name in sites:
         removed = -w.economy.move_population(facility, -per)
         delivered = w.economy.move_population(name, removed)
         if delivered < removed:
             w.economy.move_population(facility, removed - delivered)
-        w.pending_arrivals.append((delivered, name))
+        # 1.0.2: ExecuteImmediateDeliveryBetween tracks ONCE, in HandleImmediateTransfer
+        # ("the two registrations that used to live here double-counted community->shelter
+        # moves"): when anyone arrived, a lodging source's groups lose them (no casework
+        # credit) and ONE group registers at the shelter. The port still registered twice and
+        # left the evacuated group behind (search plan 7010 d13: Shelter_2's flood evacuation;
+        # the group kept rolling caseworkGen at the empty shelter).
         if delivered > 0:
+            if lodging_src:
+                w.clients.process_home(facility, delivered, w.economy.counters, credit=False)
             w.pending_arrivals.append((delivered, name))
     task.source = facility
     task.chosen_id = choice_id

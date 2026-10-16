@@ -131,7 +131,7 @@ def demand_of(task_state: dict, tag: str) -> int:
 class TaskBoard:
     """Active tasks plus in-flight deliveries."""
 
-    __slots__ = ("_late_arrivals", "active", "deliveries", "next_id", "awaiting", "has_supplier",
+    __slots__ = ("_late_arrivals", "deferred_drops", "deferred_frames", "landed_frames_out", "active", "deliveries", "next_id", "awaiting", "has_supplier",
                  "_sources", "queue", "busy", "fleet", "cell_for", "repair_for", "on_blocked", "on_completed", "orphaned",
                  "retry_if_unsourced", "source_transform", "pending", "pending_seq", "flooded", "stuck")
 
@@ -176,6 +176,9 @@ class TaskBoard:
         # creation order -- both handlers use priority 3, so priority never breaks a tie.
         self.pending = []
         self._late_arrivals = []           # epilogue unloads parked until settle_late()
+        self.deferred_drops = []           # this round's drops that follow a landing (see tick_deliveries_only)
+        self.deferred_frames = []          # ... and the frame each happened on
+        self.landed_frames_out = []        # the frame of each landing tick_deliveries_only returned
         self.pending_seq = 0
         self.flooded = frozenset()
         self.stuck = []                     # [(payload, qty)] dead deliveries Unity keeps reserving
@@ -192,6 +195,9 @@ class TaskBoard:
         b.busy = self.busy
         b.fleet = self.fleet.clone()
         b._late_arrivals = list(getattr(self, '_late_arrivals', []))
+        b.deferred_drops = list(getattr(self, 'deferred_drops', []))
+        b.deferred_frames = list(getattr(self, 'deferred_frames', []))
+        b.landed_frames_out = []
         b.cell_for = self.cell_for
         b.repair_for = dict(self.repair_for)
         b.retry_if_unsourced = self.retry_if_unsourced
@@ -648,6 +654,11 @@ class TaskBoard:
         expiring (7002, task 72: Vehicle3's first Community03 trip)."""
         if task_id in self.orphaned:
             return True
+        # A drop parked until after this round's landings is still a live trip until then:
+        # its vehicle is stopped later in the round than the siblings land, so those landings
+        # must not complete the parent first (uct-f7 7004 s24).
+        if any(d[0][0] == task_id for d in self.deferred_drops):
+            return True
         if any(o[1][0] == task_id for o in self.pending):
             return True
         f = self.fleet
@@ -694,6 +705,11 @@ class TaskBoard:
         # ProcessPendingTasks for one round: orders leave the queue as vehicles free up,
         # and whatever finishes inside the round's seconds lands now.
         landed_now = []
+        self.landed_frames_out = []
+        _cur = None
+        def _push(entry):
+            landed_now.append(entry)
+            self.landed_frames_out.append(_cur)
         def _load(payload, qty):
             """LoadCargo at the moment the vehicle reaches the source."""
             if self.retry_if_unsourced is None:
@@ -716,6 +732,22 @@ class TaskBoard:
             self.fleet.aborted = []
             self.stuck.extend(self.fleet.stuck)
             self.fleet.stuck = []
+            # FRAME ORDER BETWEEN DROPS AND LANDINGS. A drop's effects (the parent failing, a
+            # community food follow-up sized from the live shortfall) read stock that this
+            # round's earlier unloads have already raised in Unity, but the caller lands those
+            # after this returns. Drops from frames after the first landing are therefore
+            # parked for step_round to handle once the round's landings are in (uct-f7 7004 s24:
+            # Trinity received 52 and 100 at f820, the blocked delivery at f823 failed its
+            # request and the follow-up asked for 29; the port asked for 181).
+            first = self.fleet.first_land_frame
+            frames = self.fleet.drop_frames
+            if first is not None and len(frames) == len(dropped):
+                now = [d for d, f in zip(dropped, frames) if f <= first]
+                for d, f in zip(dropped, frames):
+                    if f > first:
+                        self.deferred_drops.append(d)
+                        self.deferred_frames.append(f)
+                dropped = now
         self.handle_dropped(dropped, counters)
         # A SIBLING THAT LANDS ON THE LAST FRAME KEEPS THE PARENT OPEN. `arrived` is settled
         # after run_round with the fleet as it stands at the END of the round, so an earlier
@@ -729,14 +761,21 @@ class TaskBoard:
         # same tick, before the pass, exactly as the earlier trip would have.
         _split_later = {}
         for _e in arrived:
-            if len(_e) > 3 and _e[3] == "split":
+            # A late34 sibling (unloaded after the clock on the endSim frame) is also still live
+            # through the pass: Unity's parent is InProgress until its completion, after the
+            # segment advance (uct-f7 const 7000 s29: Vehicle 4 landed at f999, Vehicle 1 at
+            # f1018 after endSim:afterAdvanceSegment, and the depletion roll found the request
+            # pending; the port completed it on the first landing and topped Amherst up).
+            if len(_e) > 3 and _e[3] in ("split", "split33", "late34"):
                 _split_later[_e[0]] = _split_later.get(_e[0], 0) + 1
-        for _entry in arrived:
+        _lf = list(self.fleet.land_frames) if not (_settling or _epilogue) else []
+        for _ai, _entry in enumerate(arrived):
+            _cur = _lf[_ai] if _ai < len(_lf) else None
             task_id, quantity, destination = _entry[0], _entry[1], _entry[2]
-            if len(_entry) > 3 and _entry[3] == "split":
+            if len(_entry) > 3 and _entry[3] in ("split", "split33", "late34"):
                 _split_later[task_id] -= 1
             zombie = len(_entry) > 3 and _entry[3] == "zombie"
-            late = len(_entry) > 3 and _entry[3] == "late"
+            late = len(_entry) > 3 and _entry[3] in ("late", "late34")
             if late and not _settling:
                 # An epilogue unload resolves at +36, AFTER this round's invoke. Settling it
                 # here freed its facility slot before the generation pass: on 5601 the port
@@ -745,7 +784,7 @@ class TaskBoard:
                 # settles it after the flood update through settle_late().
                 self._late_arrivals.append(_entry)
                 continue
-            split = len(_entry) > 3 and _entry[3] == "split"
+            split = len(_entry) > 3 and _entry[3] in ("split", "split33")
             if split and not _settling:
                 # Unloaded on the round's last movement frame: the people land NOW (before
                 # the segment advance) but CompleteTask runs on the completion frame, after
@@ -760,23 +799,44 @@ class TaskBoard:
                     # 5503 on the merged build, step 14: task 37's second casework trip
                     # unloaded on the last frame and was dropped, 20 caseworkProcessed short.
                     if quantity > 0:
-                        landed_now.append((task_id, quantity, destination, "split"))
+                        _push((task_id, quantity, destination, "split"))
                     continue
-                if task.resolved:
+                credited = task.resolved
+                if credited:
                     self.late_delivery(task, quantity, counters)
                 task.delivered += quantity
                 if quantity > 0:
-                    landed_now.append((task_id, quantity, destination, "split"))
-                self._late_arrivals.append((task_id, 0, destination, "split_resolve"))
+                    _push((task_id, quantity, destination, "split"))
+                # A "split33" (unloaded the frame BEFORE endSim by a trip dispatched in an earlier
+                # round) completes on the endSim frame after the clock -- before the next
+                # Update's expiry -- so step_round settles it ahead of expire().
+                self._late_arrivals.append((task_id, 0, destination,
+                                            "split_resolve_early" if _entry[3] == "split33" else "split_resolve",
+                                            credited))
                 continue
-            if len(_entry) > 3 and _entry[3] == "split_resolve":
+            if len(_entry) > 3 and _entry[3] in ("split_resolve", "split_resolve_early"):
                 # The completion of a split landing, after the flood: free the slot and
                 # credit the counters; the people already landed before the pass.
+                # AreAllLinkedDeliveriesComplete: a parent with another trip still out stays
+                # open (uct-f6 7012 s14: task 37's first trip landed 99, its second was loading;
+                # Unity kept 37 InProgress and expired it Incomplete at f542, and re-raised the
+                # request -- the port completed it here and did not).
+                if self._trips_outstanding(task_id):
+                    continue
                 task = self.active.get(task_id) or self.awaiting.pop(task_id, None)
                 if task is not None and task_id not in self.active and not task.resolved:
                     self.resolve(task, fulfilled=task.delivered > 0, counters=counters)
                     if self.on_completed is not None:
                         self.on_completed()
+                elif (task is not None and task.resolved and task.tag == "Food"
+                      and task.delivered > 0 and not (len(_entry) > 4 and _entry[4])):
+                    # The parent EXPIRED before this completion (the +35 Update runs before the
+                    # coroutine): OnDeliveryTaskCompleted finds it closed Incomplete with every
+                    # linked delivery done and credits AddLateFoodTask (reuse 7007 s34: Vehicle 4
+                    # unloaded 100 for task 113 at f1223, 113 Incomplete at f1224, then "Late food
+                    # delivery credited for closed task", foodFulfilled +1 in that decision).
+                    # (A parent already closed when the cargo landed was credited there.)
+                    self.late_delivery(task, task.delivered, counters)
                 continue
             task = self.active.get(task_id) or (
                 self.awaiting.get(task_id) if (self._trips_outstanding(task_id) or _split_later.get(task_id, 0) > 0)
@@ -788,7 +848,7 @@ class TaskBoard:
                 # no longer InProgress, and records nothing -- the cargo is deposited by
                 # UnloadCargo regardless (Shelter Alpha: 100 packs, foodFulfilled +0).
                 if quantity > 0 and not zombie:
-                    landed_now.append((task_id, quantity, destination))
+                    _push((task_id, quantity, destination))
                 continue
             if task.resolved:
                 # A FLEET LANDING FOR AN ALREADY-RESOLVED TASK IS A LATE DELIVERY. The
@@ -812,7 +872,7 @@ class TaskBoard:
             task.delivered += quantity
             if quantity > 0 and not zombie:
                 # An epilogue unload keeps its tag: step_round lands it after the flood.
-                landed_now.append((task_id, quantity, destination, "late") if late
+                _push((task_id, quantity, destination, _entry[3]) if late
                                   else (task_id, quantity, destination))
             if (task_id not in self.active and not task.resolved
                     and not self._trips_outstanding(task_id) and _split_later.get(task_id, 0) <= 0):
