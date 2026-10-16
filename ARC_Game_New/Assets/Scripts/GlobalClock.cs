@@ -540,7 +540,7 @@ public class GlobalClock : MonoBehaviour
         executeButton?.GetComponentInChildren<TextMeshProUGUI>()?.SetText("End Today");
         EnablePlayerInteractions();
         OnSimulationEnded?.Invoke();
-        if (gymInstantMode) gymStepsCompleted++;
+        if (gymInstantMode) CompleteGymStep();
 
         if (showDebugInfo)
             Debug.Log("Day 1 complete — all 4 rounds stepped through.");
@@ -593,11 +593,37 @@ public class GlobalClock : MonoBehaviour
     // by the gym network thread.
     private volatile int gymStepsCompleted = 0;
     public int GymStepsCompleted => gymStepsCompleted;
+    // Time.frameCount of the frame the last gym step completed on. GymServerManager snapshots
+    // the state a fixed number of frames later, so the observation never depends on when the
+    // network thread happens to notice the step.
+    private volatile int gymStepCompletedFrame = -1;
+    public int GymStepCompletedFrame => gymStepCompletedFrame;
+    void CompleteGymStep()
+    {
+        gymStepCompletedFrame = Time.frameCount;
+        gymStepsCompleted++;
+    }
     // Game-seconds advanced per frame during a gym round. A coarse step keeps rounds
     // fast and cheap: a ~10s round needs ~33 frames at 0.3 vs ~200 at 0.05. The sim is
     // deterministic and headless (no rendering/physics smoothness to preserve), and
     // delivery WaitForSeconds etc. still resolve within a frame or two.
-    private const float GYM_FIXED_DELTA = 0.3f;
+    // 0.2 s is one road cell per frame at the default moveSpeed 5 (journeyTime 1/5 s), the speed
+    // the GUI drives at. At the old 0.3 every cell took a whole frame and the remaining 0.1 s was
+    // discarded, so headless vehicles covered a third less road per round than in the GUI.
+    // -gymFixedDelta <seconds> overrides it (0.3 reproduces runs made before this change).
+    private static float GYM_FIXED_DELTA = ReadGymFixedDelta();
+    static float ReadGymFixedDelta()
+    {
+        string[] args = System.Environment.GetCommandLineArgs();
+        for (int i = 0; i + 1 < args.Length; i++)
+        {
+            if (args[i] == "-gymFixedDelta" &&
+                float.TryParse(args[i + 1], System.Globalization.NumberStyles.Float,
+                               System.Globalization.CultureInfo.InvariantCulture, out float v) && v > 0f)
+                return v;
+        }
+        return 0.2f;
+    }
     // Idle frame cap while paused between rounds (and at startup before the first
     // round). Low enough that the headless loop sleeps (~1% CPU) instead of spinning,
     // high enough that the gym main-thread action queue still drains promptly.
@@ -641,7 +667,7 @@ public class GlobalClock : MonoBehaviour
                 Debug.LogError($"[GlobalClock] gym day rollover threw (now Day {currentDay}, segment " +
                                $"{currentTimeSegment}); the step completes anyway. Full exception:\n{e}");
             }
-            gymStepsCompleted++;
+            CompleteGymStep();
             return;
         }
         StartSimulation();
@@ -845,7 +871,7 @@ public class GlobalClock : MonoBehaviour
 
         // Notify other systems
         OnSimulationEnded?.Invoke();
-        if (gymInstantMode) gymStepsCompleted++;
+        if (gymInstantMode) CompleteGymStep();
     }
     
     void AdvanceTimeSegment()

@@ -207,6 +207,8 @@ public class GymServerManager : MonoBehaviour
         if (!SceneReadyForRequests())
             return;
 
+        SnapshotCompletedStep();
+
         // Execute queued actions on main thread
         lock (actionQueueLock)
         {
@@ -527,6 +529,74 @@ public class GymServerManager : MonoBehaviour
         }
     }
 
+    // The game_state response, built on the main thread.
+    string BuildGameStateJson()
+    {
+        try
+        {
+            if (TaskSystem.Instance != null)
+            {
+                // Ensure the configured initial budget/satisfaction has been applied
+                // before the first observation, so it never reports the stale default.
+                SatisfactionAndBudget.Instance?.EnsureConfigApplied();
+                GameStatePayload gameState = TaskSystem.Instance.GetCurrentGameState();
+                GymResponse response = new GymResponse
+                {
+                    type = "game_state",
+                    game_state = JsonUtility.ToJson(gameState)
+                };
+                return JsonUtility.ToJson(response);
+            }
+            return JsonUtility.ToJson(new GymResponse
+            {
+                type = "error",
+                error = "TaskSystem not found"
+            });
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[GymServer] Error getting game state: {e}");
+            return JsonUtility.ToJson(new GymResponse
+            {
+                type = "error",
+                error = e.Message
+            });
+        }
+    }
+
+    // THE STEP OBSERVATION, TAKEN AT A FIXED FRAME. advance_time used to poll the step counter
+    // on this network thread every 10 ms of wall-clock time and then marshal the state read
+    // through two main-thread hops, so the state was usually built two frames after the step
+    // completed but sometimes later -- and whatever completed in between (a delivery's +36
+    // CompleteTask, say) was in one run's observation and not in another's. Update() now builds
+    // it on exactly the second frame after GlobalClock.GymStepCompletedFrame, which is where
+    // the old path landed almost every time, and advance_time returns that snapshot.
+    private const int STEP_SNAPSHOT_DELAY_FRAMES = 2;
+    private readonly object stepSnapshotLock = new object();
+    private int stepSnapshotStep = -1;
+    private string stepSnapshotJson = null;
+
+    void SnapshotCompletedStep()
+    {
+        GlobalClock clock = GlobalClock.Instance;
+        if (clock == null) return;
+        int done = clock.GymStepsCompleted;
+        lock (stepSnapshotLock)
+        {
+            if (done == stepSnapshotStep) return;
+        }
+        int at = clock.GymStepCompletedFrame;
+        if (at < 0 || Time.frameCount < at + STEP_SNAPSHOT_DELAY_FRAMES) return;
+        string json = BuildGameStateJson();
+        SnapshotDebug.MarkContext("gym:snapshot", "{\"step\":" + done + ",\"completedFrame\":" + at
+                                  + ",\"frame\":" + Time.frameCount + "}");
+        lock (stepSnapshotLock)
+        {
+            stepSnapshotStep = done;
+            stepSnapshotJson = json;
+        }
+    }
+
     string HandleGetGameState()
     {
         // Must execute on main thread
@@ -539,36 +609,7 @@ public class GymServerManager : MonoBehaviour
             {
                 try
                 {
-                    if (TaskSystem.Instance != null)
-                    {
-                        // Ensure the configured initial budget/satisfaction has been applied
-                        // before the first observation, so it never reports the stale default.
-                        SatisfactionAndBudget.Instance?.EnsureConfigApplied();
-                        GameStatePayload gameState = TaskSystem.Instance.GetCurrentGameState();
-                        GymResponse response = new GymResponse
-                        {
-                            type = "game_state",
-                            game_state = JsonUtility.ToJson(gameState)
-                        };
-                        result = JsonUtility.ToJson(response);
-                    }
-                    else
-                    {
-                        result = JsonUtility.ToJson(new GymResponse
-                        {
-                            type = "error",
-                            error = "TaskSystem not found"
-                        });
-                    }
-                }
-                catch (Exception e)
-                {
-                    Debug.LogError($"[GymServer] Error getting game state: {e}");
-                    result = JsonUtility.ToJson(new GymResponse
-                    {
-                        type = "error",
-                        error = e.Message
-                    });
+                    result = BuildGameStateJson();
                 }
                 finally
                 {
@@ -1758,11 +1799,29 @@ public class GymServerManager : MonoBehaviour
             ticks++;
         }
         if (ticks >= 6000)
+        {
             Debug.LogError("[GymServer] advance_time: the step did not complete within 60 s.");
+            return HandleGetGameStateWithFrame();
+        }
 
-        // Capture a frame (no-op unless render capture was enabled) and return the
-        // post-advance state. Falls through to a plain game_state when capture is Off.
-        return HandleGetGameStateWithFrame();
+        // Render capture keeps the old path: its capture runs on a main-thread hop.
+        GymCameraCapture cap = GymCameraCapture.Instance;
+        if (cap != null && cap.mode != GymCameraCapture.CaptureMode.Off)
+            return HandleGetGameStateWithFrame();
+
+        // The fixed-frame snapshot Update() takes for this step (SnapshotCompletedStep).
+        int target = GlobalClock.Instance.GymStepsCompleted;
+        for (int wait = 0; wait < 1000; wait++)            // 10 s cap
+        {
+            lock (stepSnapshotLock)
+            {
+                if (stepSnapshotStep >= target && stepSnapshotJson != null)
+                    return stepSnapshotJson;
+            }
+            Thread.Sleep(10);
+        }
+        Debug.LogError("[GymServer] advance_time: no step snapshot within 10 s; reading the state now.");
+        return HandleGetGameState();
     }
 
     // Finite-horizon terminal test. Mirrors TaskSystem.GetSessionInfo's isGameOver

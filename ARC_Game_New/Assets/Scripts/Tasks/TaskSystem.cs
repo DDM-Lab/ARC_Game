@@ -2389,6 +2389,22 @@ public class TaskSystem : MonoBehaviour
         // Search in Buildings
         Building[] buildings = FindObjectsOfType<Building>();
         Debug.Log($"Found {buildings.Length} buildings:");
+
+        // An EXACT name match decides on its own: that building if it is operational, else none.
+        // The substring match below used to let "Shelter_1" resolve to Shelter_10/Shelter_11
+        // (newest first), so a request for one shelter read, refreshed and delivered against
+        // another. It now only serves generic names no building carries exactly ("Shelter").
+        foreach (Building building in buildings)
+        {
+            if (building.name == facilityName)
+                return building.IsOperational() ? building : null;
+        }
+        foreach (PrebuiltBuilding prebuilt in FindObjectsOfType<PrebuiltBuilding>())
+        {
+            if (prebuilt.name == facilityName)
+                return prebuilt;
+        }
+
         foreach (Building building in buildings)
         {
             Debug.Log($"  Building: {building.name}");
