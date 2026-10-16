@@ -569,6 +569,11 @@ public class GlobalClock : MonoBehaviour
         if (gymInstantMode) return false;
         if (WebSocketManager.Instance == null || !WebSocketManager.Instance.isConnected) return false;
         if (!WebSocketManager.Instance.HasSentGameStart()) return false;
+        // Not before the configured map replaces the scene's placeholder layout: the officers'
+        // first proposal would otherwise read (and act on) placeholder sites and vehicles.
+        // Update() polls this, so the proposal simply goes out once the map is applied.
+        MapConfigApplier applier = FindObjectOfType<MapConfigApplier>();
+        if (applier != null && !applier.hasApplied) return false;
 
         int roundNumber = (currentDay - 1) * roundsPerDay + currentTimeSegment + 1;
         return WebSocketManager.Instance.SendBeginRound(roundNumber, currentDay, currentTimeSegment);

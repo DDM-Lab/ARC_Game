@@ -197,6 +197,16 @@ public class GymServerManager : MonoBehaviour
 
     void Update()
     {
+        // Hold every request until the configured map is in place. The scene boots with a
+        // placeholder layout (3 vehicles "Vehicle1-3", default sites) that MapConfigApplier
+        // clears and replaces once GameConfigLoader has the map config. The client connects
+        // the moment the port opens, so without this an early request ran against the
+        // placeholder: seed 7002 built a CaseworkSite on placeholder site 8, then the applier
+        // destroyed it and kept the $2,000, and the episode was a different game from
+        // decision 0 (~10 of 4,227 replays).
+        if (!SceneReadyForRequests())
+            return;
+
         // Execute queued actions on main thread
         lock (actionQueueLock)
         {
@@ -212,6 +222,32 @@ public class GymServerManager : MonoBehaviour
                 }
             }
         }
+    }
+
+    MapConfigApplier mapApplier;
+    float mapWaitSince = -1f;
+    const float MapApplyTimeoutSeconds = 20f;
+
+    /// <summary>True once this scene's MapConfigApplier has applied (or there is none).
+    /// Re-found after a reset_game reload, whose fresh applier starts unapplied.</summary>
+    bool SceneReadyForRequests()
+    {
+        if (mapApplier == null)
+            mapApplier = FindObjectOfType<MapConfigApplier>();
+        if (mapApplier == null || mapApplier.hasApplied)
+        {
+            mapWaitSince = -1f;
+            return true;
+        }
+        if (mapWaitSince < 0f)
+            mapWaitSince = Time.realtimeSinceStartup;
+        if (Time.realtimeSinceStartup - mapWaitSince > MapApplyTimeoutSeconds)
+        {
+            Debug.LogError($"[GymServer] MapConfigApplier has not applied after {MapApplyTimeoutSeconds}s — serving requests against the scene as it stands.");
+            mapWaitSince = float.MaxValue / 2f;            // log once, then stop holding
+            return true;
+        }
+        return false;
     }
 
     void StartServer()
@@ -1977,6 +2013,17 @@ public class GymServerManager : MonoBehaviour
         // refs still point at the destroyed old scene. Re-point them at the fresh
         // BuildingSystem/WorkerSystem/DeliverySystem now that the reload has settled.
         ActionExecutor.Instance?.ReresolveSceneRefs();
+
+        // reset_done must mean the configured map is in place (see SceneReadyForRequests).
+        MapConfigApplier applier = FindObjectOfType<MapConfigApplier>();
+        float waited = 0f;
+        while (applier != null && !applier.hasApplied && waited < MapApplyTimeoutSeconds)
+        {
+            waited += Time.unscaledDeltaTime;
+            yield return null;
+        }
+        if (applier != null && !applier.hasApplied)
+            Debug.LogError("[GymServer] reset_game: MapConfigApplier did not apply in time.");
 
         int day = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : -1;
         Debug.Log($"[GymServer] reset_game complete — reloaded MainScene (build {buildIndex}); now Day {day}.");
