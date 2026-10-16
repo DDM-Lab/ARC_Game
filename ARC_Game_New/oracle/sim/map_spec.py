@@ -36,7 +36,10 @@ class MapSpec:
         self.move_speed = float(d["move_speed"])
         self.simulation_duration = float(d["simulation_duration"])
         self.time_speed = int(d["time_speed"])
-        self.fixed_delta = float(d["fixed_delta"])
+        # The headless build's gym timestep (GlobalClock -gymFixedDelta). ARC_GYM_FIXED_DELTA
+        # overrides the map's value to model a build run with another one (0.3 = builds before
+        # the GUI-speed change, and their replays).
+        self.fixed_delta = float(os.environ.get("ARC_GYM_FIXED_DELTA") or d["fixed_delta"])
         self.depots = tuple(tuple(c) for c in d["depots"])
         self.road_cells = frozenset(tuple(c) for c in d["road_cells"])
         self.building_cell = {k: tuple(v) for k, v in d["building_cell"].items()}

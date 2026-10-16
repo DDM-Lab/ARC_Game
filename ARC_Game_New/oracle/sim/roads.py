@@ -38,6 +38,7 @@ FACILITY_CELL = DEFAULT_MAP.facility_cell
 SITE_CELL = DEFAULT_MAP.site_cell
 
 from heapq import heappush, heappop
+import struct
 
 
 TARGET_FPS = 10.0
@@ -305,6 +306,28 @@ def leg_seconds(steps, spec=None):
     return (steps + 1) * per_step
 
 
+def round_frames(spec) -> int:
+    """Frames in a round's simulation window: SimulationCoroutine adds the gym timestep to a float
+    `elapsed` until it reaches the window, in float32 -- 34 at 0.3 s, but 51 (not 50) at 0.2 s,
+    where 50 x 0.2f falls a hair short of 10 (endSim 51 frames after round:length in every round
+    of the 0.2 s captures)."""
+    step = struct.unpack("f", struct.pack("f", spec.fixed_delta))[0]
+    target = struct.unpack("f", struct.pack("f", spec.round_seconds))[0]
+    elapsed, n = 0.0, 0
+    while elapsed < target:
+        elapsed = struct.unpack("f", struct.pack("f", elapsed + step))[0]
+        n += 1
+    return n
+
+
+def pass_frames(spec) -> int:
+    """Frames between DeliverySystem dispatch passes: `Time.time - lastTaskAssignment >
+    taskAssignmentInterval`, strictly greater, so the first whole number of timesteps EXCEEDING
+    the interval -- 4 at 0.3 s (1.2 s) and 6 at 0.2 s (1.0 s is not > 1.0; the 0.2 s captures
+    dispatch 6 frames apart)."""
+    return int(TASK_ASSIGNMENT_INTERVAL / spec.fixed_delta + 1e-9) + 1
+
+
 class Fleet:
     """DeliverySystem's vehicles, carrying position, occupancy and damage between trips.
 
@@ -541,8 +564,8 @@ class Fleet:
         self.export_status = None
         self.export_unloading = []
         from math import ceil
-        frames = int(ceil(self.spec.round_seconds / self.spec.fixed_delta))
-        pass_every = int(TASK_ASSIGNMENT_INTERVAL // self.spec.fixed_delta) + 1
+        frames = round_frames(self.spec)
+        pass_every = pass_frames(self.spec)
         queue = list(pending)
         landed, dropped = [], []
         self.rounds += 1

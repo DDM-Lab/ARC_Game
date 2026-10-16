@@ -5,7 +5,7 @@
  "move_speed": 5.0,
  "simulation_duration": 10.0,
  "time_speed": 1,
- "fixed_delta": 0.3,
+ "fixed_delta": 0.2,
  "depots": [
   [
    -3,

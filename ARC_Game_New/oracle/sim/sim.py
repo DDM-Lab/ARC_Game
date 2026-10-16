@@ -1644,6 +1644,13 @@ def _create_tasks(w, rolls, day_changed):
 _UNITY_BUILDING_PREFIX = {"Kitchen": "Kitchen", "Shelter": "Shelter", "CaseworkSite": "CaseworkSite"}
 
 
+# TaskSystem.FindFacilityByName matches an EXACT GameObject name first (an exact match that is
+# not operational resolves to nothing) and falls back to its old substring match only for names
+# no building carries. Builds before that fix let "Shelter_1" resolve to Shelter_10/11; set this
+# False to reproduce them (replays made on those builds).
+EXACT_FACILITY_NAMES = True
+
+
 def _unity_find_facility(w, name):
     """TaskSystem.FindFacilityByName, bug for bug: the first OPERATIONAL Building, in
     FindObjectsOfType order (newest first), whose name CONTAINS the one asked for -- then the
@@ -1656,6 +1663,8 @@ def _unity_find_facility(w, name):
     if not b or b.get("prebuilt") or b.get("site_id") is None or b.get("type") not in _UNITY_BUILDING_PREFIX:
         return name
     want = f"{_UNITY_BUILDING_PREFIX[b['type']]}_{b['site_id']}"
+    if EXACT_FACILITY_NAMES:
+        return name if b.get("status") == "InUse" else None
     for c in w.economy.buildings[::-1]:
         if c.get("prebuilt") or c.get("site_id") is None or c.get("type") not in _UNITY_BUILDING_PREFIX:
             continue
