@@ -65,6 +65,7 @@ mkdir -p "$OUT"
 # TRANSFERS: task_only suppresses standalone transfers (human-faithful); manual enumerates them.
 # PROMPT: prompt pack name or path (default minimal_v6_1; see prompts/). ABLATE: rule ablation spec.
 # SEED: base seed; episode i uses SEED+i, so arms see identical scenarios.
+# ENV: unity (default) or sim -- sim plays the surrogate (oracle.sim) instead of the headless build.
 # MAP_CONFIG: map JSON path for every episode, or "none" for the built-in layout (default: the
 #   build's bundled map_config.json). Each episode record carries the map fingerprint it ran.
 FMT=(--obs_encoding compact --prompt "${PROMPT:-minimal_v6_1}" ${ABLATE:+--ablate "$ABLATE"}
@@ -72,8 +73,9 @@ FMT=(--obs_encoding compact --prompt "${PROMPT:-minimal_v6_1}" ${ABLATE:+--ablat
 
 echo "=== CORA benchmark  mode=$MODE  job=${SLURM_JOB_ID:-local}  node=$(hostname)  $(date)"
 echo "    ARC_GAME_PATH=$ARC"
-echo "    episodes=$EPISODES rounds=$ROUNDS workers=$WORKERS base_port=$BASE_PORT"
-[ -x "$ARC_HEADLESS_EXE" ] || { echo "FATAL: headless binary not executable at $ARC_HEADLESS_EXE"; exit 1; }
+ENV=${ENV:-unity}
+echo "    env=$ENV episodes=$EPISODES rounds=$ROUNDS workers=$WORKERS base_port=$BASE_PORT"
+[ "$ENV" = "sim" ] || [ -x "$ARC_HEADLESS_EXE" ] || { echo "FATAL: headless binary not executable at $ARC_HEADLESS_EXE"; exit 1; }
 
 # Kill ONLY this job's Unity processes. `pkill -f "$ARC_HEADLESS_EXE"` matches the exe path,
 # which is identical for every bench job, so on a shared node one job's cleanup/watchdog killed
@@ -140,6 +142,10 @@ if [ "$MODE" = "local" ]; then
   curl -sf "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 || { echo "FATAL: vLLM not healthy"; exit 1; }
   MODELS="$MODEL"
   EXTRA+=(--base-url "http://127.0.0.1:$PORT/v1" --api-key local --max_tokens ${MAX_TOKENS:-6000})
+  # gpt-oss calls tools one at a time and waits for each result; with one reply per decision it
+  # sent exactly one call per turn (898/898 turns). Let it keep calling (bench --tool-rounds).
+  case "$MODEL" in *gpt-oss*) : "${TOOL_ROUNDS:=8}" ;; esac
+  EXTRA+=(--tool-rounds ${TOOL_ROUNDS:-1})
   # Qwen3/3.5 emit chain-of-thought into the CONTENT channel unless the template flag is set.
   # It does NOT reduce generation (~3-5k tokens either way) but keeps content clean. Must not be
   # combined with --reasoning_effort: sending both defeats it (measured, median 16.6k chars back).
@@ -183,7 +189,7 @@ echo "=== models: $MODELS"
 $PY -u -m bench --models "$MODELS" \
     --episodes "$EPISODES" --rounds "$ROUNDS" --workers "$WORKERS" \
     "${FMT[@]}" "${EXTRA[@]}" \
-    --out "$OUT" --base-port "$BASE_PORT" ${SEED:+--seed "$SEED"} ${MAP_CONFIG:+--map-config "$MAP_CONFIG"}
+    --out "$OUT" --base-port "$BASE_PORT" --env "$ENV" ${SEED:+--seed "$SEED"} ${MAP_CONFIG:+--map-config "$MAP_CONFIG"}
 RC=$?
 kill "$WATCHDOG" 2>/dev/null
 echo "=== exit=$RC  $(date)"

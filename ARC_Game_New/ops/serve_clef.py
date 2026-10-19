@@ -17,19 +17,46 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
+def load_split(path):
+    """load_release_model with the backbone split over the visible GPUs (device_map="auto"); the
+    joint head sits with the output embeddings, and its inputs are moved there."""
+    import json as _json
+    from pathlib import Path
+    import torch
+    from safetensors.torch import load_file
+    from transformers import AutoProcessor, Qwen3_5ForConditionalGeneration
+    from joint_schema_model import ClefModel, JointSchemaHead
+    path = Path(path)
+    backbone = Qwen3_5ForConditionalGeneration.from_pretrained(path, dtype=torch.bfloat16, device_map="auto")
+    backbone.config.use_cache = False
+    head = JointSchemaHead(**_json.loads((path / "joint_head_config.json").read_text()))
+    head.load_state_dict(load_file(path / "joint_head.safetensors"), strict=True)
+    dev = backbone.get_output_embeddings().weight.device
+    head = head.to(device=dev, dtype=torch.bfloat16)
+    inner = head.forward
+
+    def forward(hidden, input_ids, attention_mask, records, weight):
+        return inner(hidden.to(dev), input_ids.to(dev), attention_mask.to(dev), records, weight.to(dev))
+    head.forward = forward
+    return ClefModel(backbone, head).eval(), AutoProcessor.from_pretrained(path)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("checkpoint", help="local clef / clef-flash snapshot (holds joint_schema_model.py)")
     ap.add_argument("--port", type=int, default=8810)
     ap.add_argument("--name", default="clef-flash")
     ap.add_argument("--max-length", type=int, default=16384)
+    ap.add_argument("--device-map", default=None,
+                    help='"auto": split the backbone over every visible GPU (Clef 27B on 2 x 48 GB)')
     a = ap.parse_args(argv)
 
     sys.path.insert(0, a.checkpoint)
     from joint_schema_model import load_release_model, systemone
 
     t = time.time()
-    model, processor = load_release_model(a.checkpoint, device="cuda")
+    model, processor = (load_split(a.checkpoint) if a.device_map == "auto"
+                        else load_release_model(a.checkpoint, device="cuda"))
     print(f"[serve_clef] loaded {a.checkpoint} in {time.time() - t:.0f}s", flush=True)
     lock = threading.Lock()                     # one GPU, one forward pass at a time
     stats = {"requests": 0, "seconds": 0.0}

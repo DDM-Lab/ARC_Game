@@ -3,6 +3,7 @@ self-contained record (settings, scenario, prompt, every call and its outcome, s
 from __future__ import annotations
 
 import json
+import time
 import os
 import traceback
 from dataclasses import dataclass
@@ -35,9 +36,11 @@ class RunConfig:
     temperature: Optional[float] = None
     local: Optional[LocalOptions] = None
     decision_rules: bool = True         # decision models get the system prompt as rules in the state
+    decision_schema: str = "v1"         # v1: one build question per turn | v2: one per free site
     base_seed: Optional[int] = None     # episode i plays seed base_seed + i
     map_config: Optional[str] = None
     log_dir: Optional[str] = None
+    backend: str = "unity"              # unity | sim (the surrogate; rl.cora_env.CoraEnvConfig.backend)
 
 
 # Category names for the per-round action mix (actCats); the analysis and plotting scripts read these.
@@ -117,7 +120,7 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
         history=history if state_only else 1, max_steps=rounds + 5,
         seed=(int(base_seed) + int(ep_idx)) if base_seed is not None else None,
         map_config=cfg.map_config, port=port, unity_log=ulog,
-        frame_capture="step" if real_img else "off",
+        frame_capture="step" if real_img else "off", backend=cfg.backend,
         frame_dir=os.environ.get("ARC_FRAME_DIR", "render_frames_bench") if real_img else None))
     # Static tile lattice for synthetic rendering (loaded once per episode).
     grid = MAP_GRID_JSON if (use_image and image_mode == "synthetic") else None
@@ -133,6 +136,8 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
         # records before this version are not comparable with later ones.
         "record_version": 2,
         "model": model, "policy": policy, "episode": ep_idx, "rounds": [], "error": None,
+        # Which game played it: Unity's build or the surrogate. Scores from the two are not pooled.
+        "env": cfg.backend,
         "show_impacts": show_impacts,
            "action_format": "tools",
            "obs_encoding": (obs_encoding if state_only else "json"),
@@ -152,6 +157,8 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
            # stamping: a local model that reasons in the CONTENT channel (qwen3:4b does) is cut
            # off mid-prose by a low cap and emits no tool call, so the cap decides the result.
            "max_tokens": cfg.local.max_tokens if cfg.local else None,
+           "tool_rounds": cfg.local.tool_rounds if cfg.local else 1,
+           "decision_schema": cfg.decision_schema if policy == "decision" else None,
            "temperature": temperature,           # requested experimental level
            "temperature_sent": eff_temp,         # actually sent (Anthropic clamped to <=1.0)
            "system_prompt": _sys_text}
@@ -174,6 +181,7 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
         for rnd in range(rounds):
             state = cenv.observation
             raw = rtrace = None; rtok = None; parsed_ok = None
+            t_policy = time.time()
             if policy == "noop":
                 dec = {"tool_calls": []}
             elif policy == "decision":
@@ -181,11 +189,14 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
                 # (bench.decision); its answers become the same tool calls an LLM would make.
                 try:
                     calls, resp = decision.act(state, model, client,
-                                               rules=cenv.system_prompt if cfg.decision_rules else None)
+                                               rules=cenv.system_prompt if cfg.decision_rules else None,
+                                               schema=cfg.decision_schema)
                 except Exception as e:
                     rec["error"] = f"decision model error r{rnd}: {e}"
                     break
-                dec = {"tool_calls": calls}; raw = json.dumps(resp.get("answers") or {})
+                # raw: every question asked and its full answer (all option probabilities)
+                dec = {"tool_calls": calls}
+                raw = json.dumps({"answers": resp.get("answers") or {}, "questions": resp.get("questions") or {}})
                 rtok = (resp.get("usage") or {}).get("total_tokens"); parsed_ok = True
             elif policy in POLICIES:
                 # A baseline picks from the menu; it acts through the same tool calls as a model.
@@ -223,6 +234,7 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
                     # hard API/network error: end the episode
                     rec["error"] = f"LLM error r{rnd}: {e}"
                     break
+            policy_s = time.time() - t_policy
             # ── execute: every policy's tool calls go through the one executor ──
             user_text, reward, term, trunc, info = cenv.step(dec["tool_calls"])
             call_results = info["call_results"]
@@ -240,6 +252,9 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
             min_budget = min(min_budget, info.get("budget", 0.0))
             rec["rounds"].append(_round_record(rnd, reward, total, info, call_results, state, raw,
                                                dec, parsed_ok, rtrace, rtok))
+            # Seconds this decision spent choosing (model / policy) and in the game (step + round).
+            rec["rounds"][-1]["policy_s"] = round(policy_s, 3)
+            rec["rounds"][-1]["env_s"] = round(info.get("env_s", 0.0), 3)
             if term or trunc:
                 rec["terminated"] = bool(term)
                 break

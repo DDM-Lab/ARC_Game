@@ -5,7 +5,7 @@ writes <out>/episodes.jsonl (one record per game) and <out>/summary.json. Episod
 concurrently across --workers, each on its own port.
 
     python -m bench --models qwen3:4b --base-url http://127.0.0.1:11434/v1 --episodes 4 --seed 7000
-    python -m bench --policy combined --episodes 8 --seed 7000
+    python -m bench --policy rules --episodes 8 --seed 7000
     python -m bench --validate          # one 2-decision no-op game: checks the build and ports
 """
 from __future__ import annotations
@@ -46,6 +46,8 @@ def parse_args(argv=None):
                     help="llm = benchmark the --models; otherwise a baseline (no API): "
                          + ", ".join(POLICIES) + "; noop does nothing")
     ap.add_argument("--models", default=",".join(DEFAULT_MODELS))
+    ap.add_argument("--decision-schema", choices=["v1", "v2"], default="v1",
+                    help="--policy decision: v1 asks one build question per turn, v2 one per free site")
     ap.add_argument("--decision-no-rules", action="store_true",
                     help="--policy decision: give the model only the observation, not the rules text")
     ap.add_argument("--episodes", type=int, default=20)
@@ -77,6 +79,9 @@ def parse_args(argv=None):
     ap.add_argument("--transfers", choices=["manual", "task_only"], default="task_only",
                     help="task_only (default) = transfers only through task choices, as in the GUI; "
                          "manual = standalone transfer tool as well")
+    ap.add_argument("--env", choices=["unity", "sim"], default="unity",
+                    help="unity = the headless build (default; the scores to report); sim = the "
+                         "surrogate (oracle.sim): no Unity process, ~4 ms a turn, default map only")
     ap.add_argument("--map-config", default=None,
                     help="map JSON for every game, or 'none' for the scene's built-in layout "
                          "(default: the build's pinned map)")
@@ -92,6 +97,9 @@ def parse_args(argv=None):
                          "turns thinking off on Ollama reasoning models")
     ap.add_argument("--max_tokens", type=int, default=None,
                     help="local servers only: total generation budget (reasoning + answer)")
+    ap.add_argument("--tool-rounds", type=int, default=1,
+                    help="local servers only: model replies per decision; >1 lets a sequential tool "
+                         "caller (gpt-oss) keep calling after each queued call (bench.llm.LocalOptions)")
     ap.add_argument("--no-thinking", action="store_true",
                     help="local servers only: chat_template_kwargs enable_thinking=false (Qwen "
                          "templates move the reasoning out of the visible content)")
@@ -136,7 +144,7 @@ def _wandb_condition(args):
 def main(argv=None):
     args = parse_args(argv)
     need_render = args.image_mode == "real" and args.policy == "llm"
-    if not Path(default_exe(render=need_render)).exists():
+    if args.env != "sim" and not Path(default_exe(render=need_render)).exists():
         sys.exit(f"Build not found: {default_exe(render=need_render)}")
     if args.image_mode == "synthetic" and not Path(MAP_GRID_JSON).exists():
         sys.exit(f"Synthetic mode needs the tile grid: {MAP_GRID_JSON} (python -m bench.export_map_grid)")
@@ -146,13 +154,15 @@ def main(argv=None):
     local = None
     if args.base_url:
         local = LocalOptions(reasoning_effort=args.reasoning_effort, max_tokens=args.max_tokens,
-                             chat_template_kwargs={"enable_thinking": False} if args.no_thinking else None)
+                             chat_template_kwargs={"enable_thinking": False} if args.no_thinking else None,
+                             tool_rounds=args.tool_rounds)
     cfg = RunConfig(policy="noop" if args.validate else args.policy,
                     rounds=2 if args.validate else args.rounds,
                     prompt=args.prompt, ablation=args.ablate, show_impacts=args.impacts,
                     manual_transfers=args.transfers == "manual", obs_encoding=args.obs_encoding,
                     history=args.history, image_mode=args.image_mode, temperature=args.temperature,
-                    local=local, decision_rules=not args.decision_no_rules, base_seed=args.seed, map_config=args.map_config, log_dir=str(ulog_dir))
+                    local=local, decision_rules=not args.decision_no_rules, decision_schema=args.decision_schema, base_seed=args.seed, map_config=args.map_config, log_dir=str(ulog_dir),
+                    backend=args.env)
     port_pool = queue.Queue()
     for w in range(args.workers):
         port_pool.put(args.base_port + w)
@@ -192,6 +202,15 @@ def main(argv=None):
                   f"food={s.get('foodFulfillRate')} lodg={s.get('lodgingFulfillRate')} {'ERR: ' + err if err else ''}")
 
     agg = aggregate(records)
+    for name, row in agg.items():
+        # The game that played (unity / sim) and where each decision's time went.
+        recs = [r for r in records if r.get("model") == name]
+        rounds = [rd for r in recs for rd in r.get("rounds") or []]
+        if isinstance(row, dict):
+            row["env"] = args.env
+            if rounds:
+                row["meanPolicySecondsPerTurn"] = round(sum(rd.get("policy_s", 0) for rd in rounds) / len(rounds), 4)
+                row["meanEnvSecondsPerTurn"] = round(sum(rd.get("env_s", 0) for rd in rounds) / len(rounds), 4)
     (outdir / "summary.json").write_text(json.dumps(agg, indent=2))
     print_table(agg)
     print(f"\nPer-episode: {jsonl}\nSummary:     {outdir / 'summary.json'}")

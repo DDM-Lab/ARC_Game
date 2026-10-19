@@ -17,6 +17,9 @@ nothing told it so). The questions are the turn's action menu:
     build              choice   none / shelter / kitchen / casework
     build_site         choice   one of available.buildSites (read only when build != none; asked
                                 only when more than one site is free)
+    build_s<id>        choice   schema "v2" instead of build / build_site: one question per free
+                                site (none / shelter / kitchen / casework), so a turn can start
+                                several buildings as the rules policy does
     hire_trained       score    0..HIRE_MAX workers
     hire_untrained     score    0..HIRE_MAX workers
     train              score    0..min(HIRE_MAX, trainUntrainedMax)
@@ -58,14 +61,20 @@ def _task_questions(obs: dict) -> tuple[dict, dict]:
     return questions, decode
 
 
-def build_request(obs: dict, model: str, rules: Optional[str] = None) -> tuple[dict, dict]:
+def build_request(obs: dict, model: str, rules: Optional[str] = None, schema: str = "v1") -> tuple[dict, dict]:
     """(SystemOne request body, decode map qid -> how its answer becomes a tool call). `rules`, when
     given, is the game's rules text (the LLM arms' system prompt) placed in the state beside the
-    observation."""
+    observation. `schema` "v2" asks one build question per free site instead of one per turn."""
     questions, decode = _task_questions(obs)
     avail = obs.get("available") or {}
     sites = list(avail.get("buildSites") or [])
-    if sites:
+    if sites and schema == "v2":
+        for s in sites:
+            questions[f"build_s{s}"] = {"type": "choice", "criteria": dict(BUILD_TYPES),
+                                        "instructions": f"Should a new building be started on build site {s} "
+                                                        f"this turn, and which type?"}
+            decode[f"build_s{s}"] = ("build_at", s)
+    elif sites:
         questions["build"] = {"type": "choice", "criteria": dict(BUILD_TYPES),
                               "instructions": "Should a new building be started this turn, and which type?"}
         if len(sites) > 1:          # a one-option choice is not a question: the only site is used
@@ -149,6 +158,10 @@ def tool_calls(answers: dict, decode: dict, mode: str = "argmax", rng: Optional[
             site = arg or _choice(answers.get("build_site") or {}, mode, rng)
             if t and t != "none" and site:
                 calls.append(("build", {"type": t, "site_id": int(str(site).lstrip("s"))}))
+        elif kind == "build_at":
+            t = _choice(ans, mode, rng)
+            if t and t != "none":
+                calls.append(("build", {"type": t, "site_id": int(arg)}))
         elif kind == "hire":
             n = _score(ans, mode, rng)
             if n > 0:
@@ -179,10 +192,14 @@ class Client:
 
 
 def act(obs: dict, model: str, client, mode: str = "argmax", rng=None,
-        rules: Optional[str] = None) -> tuple[list, dict]:
-    """One turn: (tool calls, the raw response) for the observation `obs`."""
-    body, decode = build_request(obs, model, rules)
+        rules: Optional[str] = None, schema: str = "v1") -> tuple[list, dict]:
+    """One turn: (tool calls, the raw response) for the observation `obs`. `schema` "v2" asks
+    one build question per free site (v1 allows one build per turn; rules builds up to four)."""
+    body, decode = build_request(obs, model, rules, schema)
     if not body["questions"]:
         return [], {"answers": {}, "note": "nothing to decide"}
     resp = client(body)
+    # The asked questions travel with the answers, so a record says what every probability was
+    # over (option ids and texts), for calibration analysis against search.
+    resp["questions"] = body["questions"]
     return tool_calls(resp.get("answers") or {}, decode, mode, rng), resp

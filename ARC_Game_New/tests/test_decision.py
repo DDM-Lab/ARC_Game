@@ -72,3 +72,20 @@ def test_argmax_reads_each_answer_shape():
     assert decision.tool_calls(answers, decode) == [
         ("task", {"task_id": "FOOD_X", "choice_id": 2}), ("build", {"type": "kitchen", "site_id": 4}),
         ("hire", {"kind": "trained", "count": 2}), ("staff", {"site": "Shelter Alpha"})]
+
+
+def test_schema_v2_asks_one_build_question_per_free_site():
+    """v1 asks build + build_site (one building a turn); v2 asks build_s<id> per free site, so one
+    turn can start several buildings."""
+    env = SimEnv(seed=5503, max_episode_steps=40, manual_transfers=False)
+    env.reset()
+    obs = observe(env.game_state, env.get_valid_actions())
+    sites = obs["available"]["buildSites"]
+    assert len(sites) > 1
+    v1, _ = decision.build_request(obs, "test", schema="v1")
+    v2, decode = decision.build_request(obs, "test", schema="v2")
+    assert "build" in v1["questions"] and not any(q[len("build_s"):].isdigit() for q in v1["questions"] if q.startswith("build_s"))
+    assert {f"build_s{s}" for s in sites} <= set(v2["questions"]) and "build" not in v2["questions"]
+    answers = {f"build_s{s}": {"choice": "kitchen"} for s in sites}
+    builds = [c for c in decision.tool_calls(answers, decode) if c[0] == "build"]
+    assert sorted(a["site_id"] for _, a in builds) == sorted(sites)

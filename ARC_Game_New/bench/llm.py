@@ -24,10 +24,16 @@ class LocalOptions:
                           prompt): completion tokens are ~3-5k either way; enable_thinking=false
                           only moves the chain-of-thought out of `content` (16k chars -> ~94). It
                           buys readable transcripts, not speed.
+    tool_rounds           model replies per decision (default 1). A sequential tool caller makes one
+                          call and waits for its result before the next: gpt-oss sent exactly one
+                          call on all 898 turns of a 32-game run while its reasoning planned several.
+                          With N > 1 each call is answered "queued" and the model may keep calling,
+                          up to N replies; every call still runs together when the turn ends.
     """
     reasoning_effort: Optional[str] = None
     max_tokens: Optional[int] = None
     chat_template_kwargs: Optional[dict] = None
+    tool_rounds: int = 1
 
 
 def is_anthropic(model):
@@ -79,49 +85,70 @@ def ask_tools(client, model, system_text, tools, user_text, image_b64=None, temp
                             "chat_template_kwargs": local.chat_template_kwargs}
     if temperature is not None:
         kw["temperature"] = temperature
-    try:
-        r = client.chat.completions.create(**kw)
-    except Exception as e:
-        emsg = str(e).lower()
-        if "temperature" in emsg:
-            kw.pop("temperature", None)
-        if "max_tokens" in emsg or "max_completion_tokens" in emsg:
-            kw.pop("max_tokens", None)
-            kw["max_completion_tokens"] = local.max_tokens or 2000
-        if ("reasoning" in emsg or "think" in emsg) and "reasoning_effort" in kw:
-            kw.pop("reasoning_effort", None)   # non-thinking model rejects the knob
-        if "chat_template" in emsg or "template" in emsg:
-            kw.pop("extra_body", None)
-        r = client.chat.completions.create(**kw)
-    m = r.choices[0].message
-    content = m.content or ""
-    raw_tcs = getattr(m, "tool_calls", None) or []
+    def create():
+        try:
+            return client.chat.completions.create(**kw)
+        except Exception as e:
+            emsg = str(e).lower()
+            if "temperature" in emsg:
+                kw.pop("temperature", None)
+            if "max_tokens" in emsg or "max_completion_tokens" in emsg:
+                kw.pop("max_tokens", None)
+                kw["max_completion_tokens"] = local.max_tokens or 2000
+            if ("reasoning" in emsg or "think" in emsg) and "reasoning_effort" in kw:
+                kw.pop("reasoning_effort", None)   # non-thinking model rejects the knob
+            if "chat_template" in emsg or "template" in emsg:
+                kw.pop("extra_body", None)
+            return client.chat.completions.create(**kw)
+
+    # One reply per decision, or up to local.tool_rounds for a sequential tool caller: each
+    # call is acknowledged as queued and the model may add more; all of them run at turn end.
+    turn, contents, raw_tcs, traces, rtok = [], [], [], [], None
+    for k in range(max(1, local.tool_rounds)):
+        r = create()
+        m = r.choices[0].message
+        tcs = getattr(m, "tool_calls", None) or []
+        for tc in tcs:
+            # vLLM's harmony parser (gpt-oss) sometimes keeps the channel header in the name:
+            # "task<|channel|>commentary" -- 192 of 2,095 gpt-oss calls rejected as unknown tools.
+            if tc.function.name and "<|" in tc.function.name:
+                tc.function.name = tc.function.name.split("<|", 1)[0].strip()
+        contents.append(m.content or "")
+        raw_tcs.extend(tcs)
+        tr, tk = reasoning_of(r)
+        if tr:
+            traces.append(tr)
+        if tk is not None:
+            rtok = (rtok or 0) + tk
+        # HISTORY SERIALIZATION BUG (fixed): a pure tool-call reply used to be recorded as if
+        # the assistant had SPOKEN command-tag text. The model then few-shot-imitated its own
+        # apparent output format and emitted "<staff>Kitchen_0,4</staff>" as plain text -- which
+        # the executor never reads (it only looks at message.tool_calls), so the action was
+        # silently dropped. Self-reinforcing: once it emits text, content is non-empty, so
+        # history keeps teaching text-mode. Measured on 32-episode runs: Qwen3-4B h=4 937/1024
+        # rounds (91.5%) corrupted, Qwen3-14B 397 (38.8%), Qwen3.5-27B 153 (14.9%), and 0/1024
+        # at history=1 -- median onset round 2. Record the real tool_calls instead, so the
+        # replayed history shows the model the channel it must actually use.
+        if not tcs:
+            turn.append({"role": "assistant", "content": m.content or ""})
+            break
+        turn.append({"role": "assistant", "content": m.content or None,
+                     "tool_calls": [{"id": tc.id, "type": "function",
+                                     "function": {"name": tc.function.name,
+                                                  "arguments": tc.function.arguments}}
+                                    for tc in tcs]})
+        last = k + 1 >= max(1, local.tool_rounds)
+        ack = "ok" if last else ("queued; it runs when the turn ends. Call any further actions now, "
+                                  "or reply without a tool call to end the turn.")
+        turn.extend({"role": "tool", "tool_call_id": tc.id, "content": ack} for tc in tcs)
+        if last:
+            break
+        kw["messages"] = msgs + turn
+    content = "\n".join(c for c in contents if c)
 
     if history is not None:
         history.append(_user_msg(user_text, None))
-        # HISTORY SERIALIZATION BUG (fixed): this used to append
-        #     {"role": "assistant", "content": content or tags}
-        # so a pure tool-call turn (content == "") was recorded as if the assistant had SPOKEN
-        # the command-tag text. The model then few-shot-imitated its own apparent output format
-        # and emitted "<staff>Kitchen_0,4</staff>" as plain text -- which the executor never
-        # reads (it only looks at message.tool_calls), so the action was silently dropped with
-        # no error and no state change. Self-reinforcing: once it emits text, content is
-        # non-empty, so history keeps teaching text-mode. Measured on 32-episode runs:
-        # Qwen3-4B h=4 937/1024 rounds (91.5%) corrupted, Qwen3-14B 397 (38.8%),
-        # Qwen3.5-27B 153 (14.9%), and 0/1024 at history=1 -- median onset round 2, the first
-        # round in which a prior assistant turn exists. 3,738 well-formed actions destroyed in
-        # the 4B run alone. Record the real tool_calls instead, so the replayed history shows
-        # the model the channel it must actually use.
-        if raw_tcs:
-            history.append({"role": "assistant", "content": content or None,
-                            "tool_calls": [{"id": tc.id, "type": "function",
-                                            "function": {"name": tc.function.name,
-                                                         "arguments": tc.function.arguments}}
-                                           for tc in raw_tcs]})
-            for tc in raw_tcs:
-                history.append({"role": "tool", "tool_call_id": tc.id, "content": "ok"})
-        else:
-            history.append({"role": "assistant", "content": content})
+        history.extend(turn)
     reason = ""
     mr = re.search(r"REASONING:\s*(.+)", content or "")
     if mr:
@@ -129,5 +156,5 @@ def ask_tools(client, model, system_text, tools, user_text, image_b64=None, temp
     # Run by executor.execute_turn in the round loop; nothing is returned to the model.
     # Zero calls is a deliberate no-op, not a failure.
     dec = {"tool_calls": list(raw_tcs), "reasoning": reason}
-    rtrace, rtok = reasoning_of(r)
+    rtrace = "\n".join(traces) if traces else None
     return dec, content, rtrace, rtok, None
