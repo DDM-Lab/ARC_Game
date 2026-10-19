@@ -25,3 +25,5 @@ ARC_Game_New/scratch/
 ARC_Game_New/benchmark_results/
 ARC_Game_New/__pycache__/
 **/__pycache__/
+# Study session data (participant logs and replays), kept on this machine only
+/data/
