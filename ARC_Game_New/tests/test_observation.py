@@ -106,6 +106,26 @@ def test_observation_shows_each_shared_task_by_its_own_id():
     assert "[CASEWORK_MOTEL#43]" in render(observe(gs))
 
 
+def test_people_on_their_way_are_shown_against_their_destination():
+    """A walk names its destination as the facilities table does, and the destination's row shows
+    who is already coming: Casework Alpha at 0/50 with 31 walking in has room for 19, not 50."""
+    gs = {"mapState": {"facilities": [
+              {"facilityName": "Casework Alpha", "buildingType": "CaseworkSite", "facilityType": "Building",
+               "originalSiteId": 2, "buildingStatus": "InUse", "assignedWorkforce": 4, "requiredWorkforce": 4,
+               "currentPopulation": 0, "populationCapacity": 50, "incomingPopulation": 31,
+               "resources": {"foodPacks": 0}},
+              {"facilityName": "Motel", "buildingType": "Motel", "facilityType": "Motel",
+               "assignedWorkforce": 0, "requiredWorkforce": 0,
+               "currentPopulation": 40, "populationCapacity": 3000, "resources": {"foodPacks": 0}}]},
+          "logistics": {"pendingRelocations": [
+              {"quantity": 31, "source": "Motel", "destination": "CaseworkSite_2", "roundsRemaining": 1}]}}
+    obs = observe(gs)
+    assert obs["walking"][0]["to"] == "Casework Alpha"
+    text = render(obs)
+    assert "Casework Alpha CaseworkSite InUse 4/4 0 0+31/50 2" in text
+    assert "Motel Motel Passive 0/0 0 40/3000 -" in text            # no "+0" when nobody is coming
+
+
 def test_casework_choices_marked_until_a_casework_site_is_in_use():
     gs = json.loads(json.dumps(STATES[3]["game_state"]))
     gs["allActiveTasks"] = [{"taskId": 41, "taskTitle": "Casework Request", "affectedFacility": "Motel",

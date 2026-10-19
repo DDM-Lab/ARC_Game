@@ -46,6 +46,7 @@ def observe(game_state: dict, actions: list | None = None, config: ObsConfig = O
     gs = game_state or {}
     sb = gs.get("satisfactionAndBudget", {})
     wf = gs.get("workforceState", {})
+    names = _display_names(gs)
     facs = []
     for f in gs.get("mapState", {}).get("facilities", []):
         facs.append({"name": f.get("facilityName"), "type": f.get("buildingType"),
@@ -53,6 +54,11 @@ def observe(game_state: dict, actions: list | None = None, config: ObsConfig = O
                      "needWorkers": f.get("requiredWorkforce"),
                      "food": (f.get("resources") or {}).get("foodPacks"),
                      "pop": f.get("currentPopulation"), "cap": f.get("populationCapacity"),
+                     # People already on their way here (walking or on a vehicle): the game counts
+                     # them against free space, so a destination reading 0/50 with 31 incoming has
+                     # room for 19. Without it the benchmark refused casework sends the model could
+                     # not see were over capacity (18-32 a game, 1.0.2 benchmark, 2026-10-14).
+                     "incoming": f.get("incomingPopulation") or 0,
                      # The site a building stands on (the free-site list only shows FREE sites).
                      # Passive fixtures (Communities, Motel) report none.
                      "site": f.get("originalSiteId")})
@@ -67,7 +73,10 @@ def observe(game_state: dict, actions: list | None = None, config: ObsConfig = O
                     "inTraining": wf.get("untrainedWorkersInTraining")},
         "logistics": {"vehiclesFree": gs.get("logistics", {}).get("availableVehicles")},
         # Clients relocating on foot: destination space already counts them.
-        "walking": [{"n": r.get("quantity"), "from": r.get("source"), "to": r.get("destination"),
+        # Named as the facilities table names them (the game reports "CaseworkSite_2" for
+        # "Casework Alpha"), so a walk can be matched to its destination's row.
+        "walking": [{"n": r.get("quantity"), "from": names.get(r.get("source"), r.get("source")),
+                     "to": names.get(r.get("destination"), r.get("destination")),
                      "rounds": r.get("roundsRemaining")}
                     for r in (gs.get("logistics", {}).get("pendingRelocations") or [])],
         "facilities": facs,
@@ -374,14 +383,15 @@ def _scalar_lines(obs):
     return L
 
 
-_FACILITY_LEGEND = "[name type status workers/need food pop/cap site]"
+_FACILITY_LEGEND = "[name type status workers/need food pop/cap site; pop+N = N more already on their way]"
 
 
 def _facility_row(f):
     site = f.get("site")
     return (f"{f.get('name')} {f.get('type')} {f.get('status') or 'Passive'} "
             f"{f.get('workers', 0)}/{f.get('needWorkers', 0)} {f.get('food', 0)} "
-            f"{f.get('pop', 0)}/{f.get('cap', 0)} {'-' if site is None or site < 0 else site}")
+            f"{f.get('pop', 0)}{'+' + str(f['incoming']) if f.get('incoming') else ''}/{f.get('cap', 0)} "
+            f"{'-' if site is None or site < 0 else site}")
 
 
 def _facility_lines(obs):
@@ -393,7 +403,7 @@ def _facility_lines(obs):
 
 def _facility_state(f):
     return (f.get("status"), f.get("workers", 0), f.get("needWorkers", 0),
-            f.get("food", 0), f.get("pop", 0), f.get("cap", 0))
+            f.get("food", 0), f.get("pop", 0), f.get("cap", 0), f.get("incoming", 0))
 
 
 def render_facilities_delta(obs, prev):
