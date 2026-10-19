@@ -23,8 +23,8 @@ Plans:
     python -m oracle.sim.capture 5503 --calls plan.json          # [[ [tool, args], ... ], ...] per decision
     python -m oracle.sim.capture 5503 --episode benchmark_results/x/episodes.jsonl --index 0
                                                                    # replay a recorded episode's calls
-    python -m oracle.sim.capture 5503 --policy combined           # a benchmark baseline, live
-    python -m oracle.sim.capture 5503 --policy combined --epsilon 0.05 --explore-seed 1
+    python -m oracle.sim.capture 5503 --policy rules              # a benchmark baseline, live
+    python -m oracle.sim.capture 5503 --policy rules --epsilon 0.05 --explore-seed 1
                                         # ... with a random basket on 5% of decisions
 
 Needs the headless build (cora.env.unity_process.default_exe) and an unsandboxed shell.
@@ -120,7 +120,7 @@ def main():
     src.add_argument("--noop", action="store_true")
     src.add_argument("--calls")
     src.add_argument("--episode")
-    src.add_argument("--policy", help="a bench.baselines policy (greedy, combined, ...)")
+    src.add_argument("--policy", help="a bench.baselines policy (rules, ...)")
     ap.add_argument("--index", type=int, default=0, help="episode line in --episode")
     ap.add_argument("--epsilon", type=float, default=0.0,
                     help="with --policy: play a random basket on this fraction of decisions")

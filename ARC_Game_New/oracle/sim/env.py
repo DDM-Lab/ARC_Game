@@ -6,7 +6,7 @@ bench baselines, bench.baselines.explore -- plays the surrogate unchanged, ~10^4
     env = SimEnv(seed=5503)
     env.reset()
     while True:
-        calls = tool_calls(env, POLICIES["combined"](env, i, DECISIONS))
+        calls = tool_calls(env, POLICIES["rules"](env, i, DECISIONS))
         results, (_, reward, terminated, truncated, info) = executor.execute_turn(env, calls)
         if terminated or truncated:
             break

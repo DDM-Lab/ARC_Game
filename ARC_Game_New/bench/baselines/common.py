@@ -102,6 +102,8 @@ def tool_calls(env, dec) -> list:
     """A baseline's decision (task choices + menu indices) as typed tool calls, so baselines act
     through cora.executor exactly like models. Tasks are named by the token the observation shows
     (task_tokens). A building listed for staffing or teardown more than once becomes one call."""
+    if dec.get("tool_calls") is not None:          # a policy that speaks the tool surface itself
+        return [tuple(c) for c in dec["tool_calls"]]
     tokens = task_tokens((env.game_state or {}).get("allActiveTasks") or [])
     calls = []
     for c in dec.get("choices") or []:

@@ -45,7 +45,7 @@ build's map config). A build, scene, parameter or TaskData change means re-expor
 ## Keeping it exact
 
 ```bash
-python -m oracle.sim.capture 8101 --policy combined --epsilon 0.05 --explore-seed 1   # Unity, unsandboxed
+python -m oracle.sim.capture 8101 --policy rules --epsilon 0.05 --explore-seed 1   # Unity, unsandboxed
 python -m oracle.sim.obs_diff oracle/sim/runs/bench_v6 8101 [--all]                  # field-by-field, per decision
 python -m oracle.sim.parity oracle/sim/runs/bench_v6                                  # -> tests/fixtures/sim_parity
 python tests/test_sim_env.py build oracle/sim/runs/bench_v6                          # -> tests/fixtures/sim_env
@@ -62,6 +62,5 @@ C#, never a fitted constant. Captures live under `runs/` (untracked).
 
 The drivers live one level up and all play through `SimEnv`: `oracle.rollout` (any bench
 baseline, optionally with random baskets on a fraction of decisions, over many seeds in
-parallel), `oracle.pareto_sweep` (the `cora.policy_family` frontier) and `oracle.mcts` (UCT
-over per-decision candidates). Each writes per-decision tool calls that `capture.py --calls`
+parallel) and `oracle.search` (MCTS, RHEA, UCT and greedy-N agents). Each writes per-decision tool calls that `capture.py --calls`
 replays on Unity to the same score.

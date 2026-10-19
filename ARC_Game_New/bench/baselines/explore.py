@@ -1,12 +1,12 @@
 """explore: a base policy that, on a random EPSILON of decisions, plays a random basket instead.
 
 The surrogate's parity test and its search both need trajectories off the baselines' beaten
-path: a policy that always plays `combined` only ever exercises the states `combined` reaches.
+path: a policy that always plays `rules` only ever exercises the states `rules` reaches.
 A random basket is what the game's own menu allows -- a random answer to each open task (or
 none) plus a handful of random menu actions -- so every mechanic a player can trigger gets
 exercised, and the base policy keeps the trajectory realistic in between.
 
-    policy = explore(POLICIES["combined"], epsilon=0.05, seed=7)
+    policy = explore(POLICIES["rules"], epsilon=0.05, seed=7)
     dec = policy(env, decision, rounds)          # same shape as every baseline's decision
 """
 from __future__ import annotations

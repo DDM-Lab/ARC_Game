@@ -7,7 +7,7 @@ answers the narrower question by pairing the two policies AT THE SAME STATE.
 
 DESIGN
 
-A reference policy (default `combined`, the strongest non-learning baseline) DRIVES the
+A reference policy (default `rules`, the strongest non-learning baseline) DRIVES the
 episode. At every turn, before the reference action is executed, the LLM is queried as a
 SHADOW on the identical env — same round, same budget, same facilities, byte-identical
 observation. Nothing the shadow says is executed, so the trajectory is exactly the
@@ -116,7 +116,7 @@ def main():
     ap.add_argument("--rounds", type=int, default=16)
     ap.add_argument("--samples", type=int, default=1, help="LLM queries per state per encoding")
     ap.add_argument("--encodings", default="compact", help="comma list: compact,json,delta")
-    ap.add_argument("--reference", default="combined",
+    ap.add_argument("--reference", default="rules",
                     choices=list(POLICIES))
     ap.add_argument("--base-url", default="http://localhost:11434/v1")
     ap.add_argument("--api-key", default="ollama")

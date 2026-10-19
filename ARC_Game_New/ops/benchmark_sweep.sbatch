@@ -38,7 +38,7 @@ MODELS=(
   "gpt-oss-20b|openai/gpt-oss-20b|1|NOTHINK=0 REASONING_EFFORT=low"
   "qwen3.8-27b|Qwen/Qwen3.8-27B|2|"
 )
-BASELINES=${BASELINES:-noop,greedy,build-potential,combined,pareto}
+BASELINES=${BASELINES:-noop,rules}   # greedy-N needs ENV=sim (it looks ahead on the surrogate)
 
 echo "=== sweep $TAG  job=${SLURM_JOB_ID:-local}  node=$(hostname)  $(git log --oneline -1)  $(date)"
 echo "    episodes=$EPISODES seed=$SEED workers=$WORKERS root=$ROOT"

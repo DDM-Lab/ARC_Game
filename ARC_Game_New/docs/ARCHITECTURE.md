@@ -32,11 +32,10 @@ cora/                    SHARED CORE — the only place game-facing Python logic
   scoring.py             the score (Unity's rewardMetrics) and its components
   llm/                   one LLM client factory (providers, gateway, keys, reasoning capture)
   env/                   GameEnv (Gymnasium over the Unity gym server) + Unity process lifecycle
-  policy_family.py       the pareto policy family, shared by the surrogate search and the game
   records.py             reading episode records (episodes.jsonl)
 bench/                   benchmark (python -m bench): CLI, episode loop, LLM policy, baselines,
                          results, plots, SFT export, per-turn probe
-oracle/                  search: sim/ (exact surrogate + parity tooling), rollout, pareto_sweep, mcts
+oracle/                  search: sim/ (exact surrogate + parity tooling), rollout, search
 router/                  GUI officers (python -m router):
   service.py             FastAPI app: websocket handshake, keys, contributor/admin endpoints, dev panel API
   session.py             Session: one connected game (composes the mixins below)
@@ -145,7 +144,7 @@ every tool; `--compare a.json b.json` checks two runs round by round.
 | `bench/` split | done |
 | Baselines act through tool calls (`execute_indices` retired) | done |
 | Search wing: `oracle/` as a package on `cora/` (policy family, records) | done |
-| Surrogate on the new rules (`cora/params`, Unity's score), parity restored | done: `oracle/sim`, exact on every captured game (tests/test_surrogate_parity.py, tests/test_sim_env.py); search drivers (`oracle.rollout`, `pareto_sweep`, `mcts`) run on `SimEnv`, the old surrogate retired |
+| Surrogate on the new rules (`cora/params`, Unity's score), parity restored | done: `oracle/sim`, exact on every captured game (tests/test_surrogate_parity.py, tests/test_sim_env.py); search drivers (`oracle.rollout`, `oracle.search`) run on `SimEnv`, the old surrogate retired |
 | Legacy actors (auto / choices / coach) retired | done |
 | `router/` package (service, session, mixins) | done |
 | `CoraEnv` (rl/); the benchmark plays through it | done |
