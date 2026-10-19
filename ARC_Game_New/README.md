@@ -8,15 +8,15 @@ platform lets four kinds of player use the same game through the same interface:
 alongside a human in the GUI, outside models in a benchmark, policies under RL training, and
 traditional search over a fast surrogate. The GUI, benchmark and RL wings share one Python core
 (`cora/`) for the observation, the typed action tools, tool-call execution and scoring, so their
-results are comparable; the search wing shares the policy family and episode records. The design is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+results are comparable; the search wing plays the same game on the surrogate and shares the episode records. The design is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); what this release contains and how it was verified is in [docs/RELEASE_NOTES.md](docs/RELEASE_NOTES.md). Task guides for people and coding agents (benchmarking, RL training, surrogate parity) are the skills in [.claude/skills/](.claude/skills/).
 
 ## The four wings
 
 | Wing | Entry point | Plays against |
 |---|---|---|
 | GUI officers | `python -m router` (`router/`) | the WebGL/desktop game over a websocket, with a human Director |
-| Benchmark | `python -m bench` (`bench/`) | a headless Unity build over TCP, one process per episode |
-| RL | `rl.cora_env.CoraEnv` (`rl/`) | the same headless build; the Verlog fork (separate repo) wraps it in a thin adapter |
+| Benchmark | `python -m bench` (`bench/`) | a headless Unity build over TCP, one process per episode, or the surrogate (`--env sim`) |
+| RL | `rl.cora_env.CoraEnv` (`rl/`) | the same headless build or the surrogate (`backend="sim"`); the Verlog fork (separate repo) wraps it in a thin adapter |
 | Search | `python -m oracle.search`, `oracle.rollout` | `oracle/sim`, an exact Python port of the headless build |
 
 The GUI, benchmark and RL wings act through the same seven tools (`build`, `hire`, `train`,

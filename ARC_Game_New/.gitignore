@@ -130,7 +130,6 @@ wandb/
 # Local Claude Code settings (from main-bugfixes)
 .claude/settings.local.json
 
-*.pyc.claude/settings.local.json
 
 # Virtual environment
 .venv/

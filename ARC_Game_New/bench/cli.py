@@ -81,7 +81,7 @@ def parse_args(argv=None):
                          "manual = standalone transfer tool as well")
     ap.add_argument("--env", choices=["unity", "sim"], default="unity",
                     help="unity = the headless build (default; the scores to report); sim = the "
-                         "surrogate (oracle.sim): no Unity process, ~4 ms a turn, default map only")
+                         "surrogate (oracle.sim): no Unity process, ~1 ms a turn, default map only")
     ap.add_argument("--map-config", default=None,
                     help="map JSON for every game, or 'none' for the scene's built-in layout "
                          "(default: the build's pinned map)")
