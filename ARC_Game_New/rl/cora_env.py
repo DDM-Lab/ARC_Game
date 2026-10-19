@@ -23,8 +23,10 @@ RL return are the same quantity on the same prompt, observation, tools and execu
 state, actions and executor at ~1 ms a turn with no Unity process, port or pipe, so environments
 parallelise across processes and a state can be cloned (env.game.clone()). The surrogate has the
 default map and parameter sheet only and renders nothing, so map_config, param_config, images and
-frame capture are refused. Replayed on Unity build 1.0.2 it gives the same final score on all 4,217
-search plans and all 32 LLM games checked (oracle.sim.divergence_triage reports any that differ).
+frame capture are refused. On this build (1.0.2, 0.2 s vehicle step) it matches Unity field by field
+at every stop of 6 captured games and gives the same final score on 32 replayed LLM games; before the
+vehicle-step change it matched 4,217 of 4,217 search plans (oracle.sim.divergence_triage reports any
+that differ).
 """
 from __future__ import annotations
 

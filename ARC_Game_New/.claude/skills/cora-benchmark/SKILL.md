@@ -15,7 +15,7 @@ comparable across LLMs, decision models, baselines and search. A full game is 29
 
 | `--env` | What it runs | Use it for |
 |---|---|---|
-| `sim` | `oracle.sim.SimEnv`, the Python surrogate: ~1 ms a turn, no Unity, default map only | everything iterative; it gives Unity 1.0.2's final score on every replayed game checked (4,217 search plans, 32 LLM games) |
+| `sim` | `oracle.sim.SimEnv`, the Python surrogate: ~1 ms a turn, no Unity, default map only | everything iterative; it matches Unity 1.0.2 exactly on every game checked (see `cora-surrogate-parity`) |
 | `unity` (default) | the headless Linux/macOS build over TCP, one process per episode | spot-checking a result before publishing it |
 
 Pass `--seed S` so episode i plays seed S+i: two runs with one `--seed` play the same

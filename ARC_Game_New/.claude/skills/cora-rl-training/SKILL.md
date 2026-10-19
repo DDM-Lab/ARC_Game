@@ -24,9 +24,19 @@ sbatch --job-name=rl_ppo60 --output=logs/slurm-%j.out --error=logs/slurm-%j.err 
 ```
 
 - `ARC_BACKEND=sim` plays the surrogate (`oracle.sim.SimEnv`): no Unity process, no ports, and
-  final scores that match Unity 1.0.2 on every replayed game checked. `unity` (default) needs
-  `$ARC_GAME_PATH/Build/Headless/Linux/ARC_Headless.x86_64`.
-- A smoke test before a long run: `TOTAL_TRAINING_STEPS=2 CRITIC_WARMUP=0 SAVE_FREQ=-1
+  games that match Unity 1.0.2 exactly (see the `cora-surrogate-parity` skill). `unity` (default) needs
+  `$ARC_GAME_PATH/Build/Headless/Linux/ARC_Headless.x86_64`. Set the backend only through
+  `ARC_BACKEND`: the sbatch already passes `++envs.arc_game_kwargs.backend`, so an extra
+  `+envs.arc_game_kwargs.backend=sim` on the command line clashes with it.
+- Before any GPU job, check the environment on a CPU (no GPU, no Unity): whole games of the rules
+  baseline through the trainer's own env path, with the rewards checked against the final score.
+
+  ```bash
+  ARC_GAME_PATH=/path/to/ARC_Game_New python smoke_arc_game_env.py --backend sim --policy rules --episodes 3
+  ```
+
+  Each game should print `turns=29 ... OK`.
+- Then a GPU smoke test before a long run: `TOTAL_TRAINING_STEPS=2 CRITIC_WARMUP=0 SAVE_FREQ=-1
   PPO_LOGGER='["console"]'` (about 80 min including startup).
 - Submit with plain exported variables. `sbatch --export=ALL,VAR=x` leaves the job held on
   this cluster.

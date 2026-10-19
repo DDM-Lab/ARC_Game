@@ -7,8 +7,10 @@ description: Check or restore exact parity between CORA's Python surrogate (orac
 
 `oracle.sim.SimEnv` is an exact Python port of the headless Unity build: same game state
 payload, same action menu, same observation text, same score. Benchmarks and RL run on it
-because it is ~1,000x faster; that is only valid while it stays exact. As of Unity 1.0.2 it
-gives the same final score on all 4,217 replayed search plans and all 32 LLM games checked.
+because it is ~1,000x faster; that is only valid while it stays exact. On the current build
+(1.0.2 with the 0.2 s vehicle step) it matches Unity field by field at every stop of 6 captured
+games (rules with 5-15% random baskets) and gives the same final score on 32 replayed LLM games;
+before the vehicle-step change it matched all 4,217 replayed search plans.
 
 **Any change to the game's C# rules makes the surrogate stale until the rule is ported.** Port
 rules by reading the C#, never by fitting constants: every divergence found so far was a rule.

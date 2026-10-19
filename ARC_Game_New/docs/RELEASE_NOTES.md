@@ -14,8 +14,9 @@ task-level guides are the skills in `.claude/skills/` (also readable as plain Ma
 ## What changed
 
 - **Surrogate backend.** `CoraEnv(backend="sim")` plays `oracle.sim.SimEnv`, a Python port of the
-  headless build at ~1 ms a turn (Unity: ~2.8 s). Replayed on Unity 1.0.2 it gives the same final
-  score on all 4,217 search plans and all 32 LLM games checked.
+  headless build at ~1 ms a turn (Unity: ~2.8 s). On this release's build it matches Unity field
+  by field at every stop of 6 captured games and gives the same final score on 32 replayed LLM
+  games; before the 0.2 s vehicle-step change it matched all 4,217 replayed search plans.
 - **Search agents** (`oracle.search`): MCTS and RHEA over macro-moves, UCT over sampled baskets
   (progressive widening `--alpha`, common random numbers `--crn`, tree reuse `--reuse`), and
   greedy-N. **Baselines:** `rules` is the reference; `greedy-1/2/3` (best basket N decisions
@@ -35,8 +36,9 @@ task-level guides are the skills in `.claude/skills/` (also readable as plain Ma
 | Component | Status |
 |---|---|
 | Unit and parity tests | 273 passed, 2 skipped (`pytest`) |
+| Reference baseline | rules, 32 games on the surrogate at this commit: 1.4984 (table below) |
 | WebGL client | built from this commit (Unity 2022.3.62f3) |
-| Surrogate vs Unity 1.0.2 | exact final score on every replayed game checked |
+| Surrogate vs Unity 1.0.2 | macOS headless build of this commit: 6 captured games (rules, 5-15% random baskets) exact field by field at every stop (`oracle.sim.obs_diff`); 32 LLM games (Linux build, Oct 18) exact final score |
 | Verlog trainer path on the surrogate (CPU) | whole rules-policy games through `get_balrog_env`: rewards sum to the final score, equal to `python -m bench` on the same seed (`smoke_arc_game_env.py --backend sim --policy rules`) |
 | PPO on Qwen3-4B, 4xA6000 | 2-step smoke passed on the surrogate (14k actor packing with fused kernels); a 60-step run reached step 9 before a full scratch disk failed its checkpoint write. **The release sbatch's own smoke and the 60-step run are pending: the Auton cluster is down.** |
 | Playtest with Qwen3.8-27B officers on Talos | **pending Auton** (the officer model is served there) |
