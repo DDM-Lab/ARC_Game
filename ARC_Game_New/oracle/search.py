@@ -529,10 +529,28 @@ def greedy_atoms(env):
     return list(dict.fromkeys(atoms))
 
 
+def upkeep_calls(env):
+    """Greedy's follow-up turns: staff every building waiting for workers that the free workers
+    can cover (as rules does), and nothing else -- no hires, builds or task answers. A building
+    earns nothing until it is staffed on a later turn, so without this follow-up every build
+    looks like pure cost at any horizon."""
+    gs = env.game_state or {}
+    wf = gs.get("workforceState") or {}
+    free = 2 * (wf.get("freeTrainedWorkers") or 0) + (wf.get("freeUntrainedWorkers") or 0)
+    calls = []
+    for f in (gs.get("mapState") or {}).get("facilities") or []:
+        if f.get("buildingStatus") == "NeedWorker":
+            gap = max(0, (f.get("requiredWorkforce") or 0) - (f.get("assignedWorkforce") or 0))
+            if gap <= free:
+                calls.append(("staff", {"site": f["facilityName"]}))
+                free -= gap
+    return calls
+
+
 def greedy_move(sim, horizon=1, worlds=4):
     """Myopic greedy: the basket of actions for this turn that maximises the score `horizon`
-    decisions from now, with nothing done after this turn. CORA turns are multi-action, so the
-    basket is searched, not a single action: forward selection (add the action that raises the
+    decisions from now, with only upkeep (upkeep_calls: staffing) after this turn. CORA turns are
+    multi-action, so the basket is searched, not a single action: forward selection (add the action that raises the
     score most, given the basket so far, until none does), then local search over the basket --
     drop an action, or switch a task to another of its choices (or to no answer) -- until no
     single drop or switch raises it. That reaches a local optimum; the exact best basket is out
@@ -541,7 +559,8 @@ def greedy_move(sim, horizon=1, worlds=4):
     Every basket is scored on the same `worlds` imagined futures (common random numbers; the true
     future when clairvoyant). At horizon 1 an investment (a build, a hire, training) shows only
     its cost, so greedy-1 never builds; a relocation's van lands the round after it is sent, so
-    greedy-1 also rarely relocates. Longer horizons see more of what a turn's actions earn."""
+    greedy-1 also rarely relocates. From horizon 2 the upkeep turns staff what this turn built,
+    so longer horizons see more of what a turn's actions earn."""
     from cora import executor
     from cora.scoring import score_components
     from oracle.sim.rng import StreamedRandom
@@ -563,7 +582,7 @@ def greedy_move(sim, horizon=1, worlds=4):
                 _, (_, _, term, trunc, _) = executor.execute_turn(e, turn)
                 if term or trunc:
                     break
-                turn = []
+                turn = upkeep_calls(e)
             tot += score_components(e.game_state.get("rewardMetrics"))["score"]
         cache[key] = tot / len(bases)
         return cache[key]

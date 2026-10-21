@@ -1,10 +1,11 @@
 """greedy-N: each turn, the basket of actions that maximises the score N decisions ahead.
 
 The basket is searched on the surrogate (oracle.search.greedy_move: forward selection, then local
-search over drops and task-answer switches), with nothing done after this turn. greedy-1 sees an
-investment (build, hire, training) only as its cost, so it never builds: it is the myopic floor
+search over drops and task-answer switches), with only upkeep after this turn: staffing the
+buildings that are waiting for workers (oracle.search.upkeep_calls), nothing else. greedy-1 sees
+an investment (build, hire, training) only as its cost, so it never builds: it is the myopic floor
 that `rules` and search are measured against; greedy-2 and greedy-3 see one and two more rounds
-of what a turn's actions earn.
+of what a turn's actions earn, including what this turn's builds earn once staffed.
 
 It needs a simulator to look ahead, so it runs on the surrogate (--env sim). For a Unity score,
 play it with `python -m oracle.search <seed> --algo greedy1 --plan plan.json` and replay the plan
