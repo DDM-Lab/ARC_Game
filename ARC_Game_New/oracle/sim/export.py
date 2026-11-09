@@ -79,7 +79,7 @@ def _trigger(w, affected):
     if not affected:
         return None
     built, pre = _built(w)
-    if S.EXACT_FACILITY_NAMES:
+    if S.EXACT_FACILITY_NAMES and not w.study_rules:
         # The fixed FindFacilityByName: an exact name decides on its own (operational or None);
         # the substring match only serves generic names no building carries ("Shelter").
         for b in built:

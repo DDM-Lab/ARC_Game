@@ -38,6 +38,7 @@ class RunConfig:
     decision_rules: bool = True         # decision models get the system prompt as rules in the state
     decision_schema: str = "v1"         # v1: one build question per turn | v2: one per free site
     base_seed: Optional[int] = None     # episode i plays seed base_seed + i
+    seeds: Optional[list] = None        # explicit per-episode seeds (e.g. the human games'); overrides base_seed
     map_config: Optional[str] = None
     log_dir: Optional[str] = None
     backend: str = "unity"              # unity | sim (the surrogate; rl.cora_env.CoraEnvConfig.backend)
@@ -97,6 +98,7 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
     show_impacts, manual_transfers, obs_encoding, history = (cfg.show_impacts, cfg.manual_transfers,
                                                              cfg.obs_encoding, cfg.history)
     temperature, ablation, base_seed = cfg.temperature, cfg.ablation, cfg.base_seed
+    seed = int(cfg.seeds[ep_idx]) if cfg.seeds else (int(base_seed) + int(ep_idx)) if base_seed is not None else None
     # Anthropic caps temperature at 1.0; clamp per-model so a shared sweep invocation (e.g. temp=1.5
     # for gemini) doesn't 400 Claude. eff_temp is what's actually sent + logged; temperature is the
     # requested experimental level.
@@ -118,7 +120,7 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
         prompt=cfg.prompt, ablation=ablation, image_mode=image_mode if use_image else "none",
         manual_transfers=manual_transfers, show_impacts=show_impacts, obs_encoding=obs_encoding,
         history=history if state_only else 1, max_steps=rounds + 5,
-        seed=(int(base_seed) + int(ep_idx)) if base_seed is not None else None,
+        seed=seed,
         map_config=cfg.map_config, port=port, unity_log=ulog,
         frame_capture="step" if real_img else "off", backend=cfg.backend,
         frame_dir=os.environ.get("ARC_FRAME_DIR", "render_frames_bench") if real_img else None))
@@ -131,7 +133,7 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
     rec = {
         # Recorded so the analysis can pair episode i of one variant against episode i
         # of another; None when the run was unseeded.
-        "seed": (int(base_seed) + int(ep_idx)) if base_seed is not None else None,
+        "seed": seed,
         # 2: every policy acts through tool calls (baselines' menu picks are converted), so baseline
         # records before this version are not comparable with later ones.
         "record_version": 2,

@@ -35,7 +35,10 @@ import re
 from dataclasses import dataclass, field
 
 PACKS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts")
-DEFAULT_PACK = "minimal_v6_1"
+# The one default for every entry point (benchmark CLI, CoraEnv, RL launchers): the prompt the Oct
+# 2026 study benchmark ran (task_only/typed renders as 6992cc02aa02, pinned in tests/test_prompts.py).
+# RL scripts inherit it rather than naming a pack, so RL and the benchmark cannot drift apart.
+DEFAULT_PACK = "minimal_v7"
 WIRE_FORMATS = ("typed", "hermes")
 IMAGE_MODES = ("none", "synthetic", "real")
 

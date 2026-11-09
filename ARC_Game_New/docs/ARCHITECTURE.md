@@ -27,7 +27,7 @@ cora/                    SHARED CORE — the only place game-facing Python logic
   tools.py               the typed action-tool schema (OpenAI shape; verl arc_tools.yaml)
   actions.py             the action menu: every game action available in a state, Unity's shape
   executor.py            tool calls -> resolved game actions -> committed; per-call outcomes
-  prompts.py             system prompts, as JSON packs in prompts/ (minimal_v6_1, minimal_v6)
+  prompts.py             system prompts, as JSON packs in prompts/ (default minimal_v7, the benchmark prompt)
   prompt_ablation.py     rule removal / paraphrase arms for prompt studies
   scoring.py             the score (Unity's rewardMetrics) and its components
   llm/                   one LLM client factory (providers, gateway, keys, reasoning capture)

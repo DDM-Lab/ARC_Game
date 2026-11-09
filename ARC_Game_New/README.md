@@ -83,7 +83,7 @@ python -m bench --validate                                   # one short no-op g
 python -m bench --policy rules --episodes 8 --seed 7000      # a baseline, no API
 python -m bench --models gpt-5-mini --episodes 4 --seed 7000 # an LLM (default endpoint: CMU gateway)
 python -m bench --models qwen3:4b --base-url http://127.0.0.1:11434/v1 --episodes 4
-ops/run_benchmark.sh minimal_v6_1 gpt-5-mini 5               # prompt pack + model + episodes
+ops/run_benchmark.sh minimal_v7 gpt-5-mini 5                 # prompt pack + model + episodes
 ```
 
 Results go to `--out` (default `benchmark_results/`): `episodes.jsonl` and `summary.json`. See

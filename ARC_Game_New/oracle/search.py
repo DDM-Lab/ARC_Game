@@ -667,6 +667,35 @@ def rhea_move(sim, budget, carry, horizon=8, pop=8, mut=None):
     return best[0], [g for _, g in scored]
 
 
+class Agent:
+    """A search agent that plays an env it does not own, one decision at a time: the per-decision
+    step of run() for mcts, rhea, uct-f7 and rules (no tree reuse, no logging). The RL trainer uses
+    it to play critic warm-up games on its own SimEnv. Call reset() at each new game."""
+
+    def __init__(self, algo, budget, info="fair", seed=0):
+        if algo not in ("mcts", "rhea", "uct-f7", "rules"):
+            raise ValueError(f"Agent plays mcts | rhea | uct-f7 | rules, not {algo!r}")
+        self.algo, self.budget, self.info = algo, int(budget), info
+        self.rng = random.Random(seed)
+        self.carry = None
+
+    def reset(self):
+        self.carry = None
+
+    def calls(self, env, decision):
+        """The tool calls (name, args dict) to play at `decision` of `env` (a SimEnv)."""
+        sim = Sim(env, decision, self.info, self.rng)
+        if self.algo == "mcts":
+            return move_calls(env, decision, mcts_move(sim, self.budget))
+        if self.algo == "rhea":
+            m, self.carry = rhea_move(sim, self.budget, self.carry)
+            return move_calls(env, decision, m)
+        if self.algo == "uct-f7":
+            gen = lambda e, r: _filtered_calls(e, r, strategy=True, empty=False, premium=False)
+            return uct_move(sim, self.budget, "random", gen)
+        return move_calls(env, decision, "rules")
+
+
 def run(seed, algo, budget, info, search_seed=0, log=None, data=None, sample_p=0.02, crn=0, reuse=False,
         leaf=None, leaf_depth=0, sims=0, c=None, value=None, tree_log=None, alpha=0.5):
     """One game on the surrogate driven by the agent. Returns (plan, final score, moves).

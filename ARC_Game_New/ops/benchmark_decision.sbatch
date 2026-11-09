@@ -27,7 +27,7 @@ PY=${PY:-/zfsauton/scratch/$USER/conda_envs/vllm027/bin/python}
 SERVER_PY=${SERVER_PY:-/zfsauton/scratch/$USER/conda_envs/qwen35/bin/python}
 MODEL_NAME=${MODEL_NAME:-clef-flash}
 CKPT=${CKPT:-/zfsauton/scratch/$USER/models/decision/Cloudflare__clef-flash}
-EPISODES=${EPISODES:-32}; SEED=${SEED:-7000}; WORKERS=${WORKERS:-8}; PROMPT=${PROMPT:-minimal_v7}
+EPISODES=${EPISODES:-32}; SEED=${SEED:-7000}; WORKERS=${WORKERS:-8}; PROMPT=${PROMPT:-}   # empty: cora.prompts.DEFAULT_PACK (minimal_v7)
 ENV=${ENV:-unity}                  # sim: play the surrogate (no Unity build needed)
 SCHEMA=${SCHEMA:-v1}               # v2: one build question per free site (bench --decision-schema)
 BACKEND=${BACKEND:-clef}           # clef: ops/serve_clef.py | jev: vLLM + ops/serve_jev.py | jev-hf: serve_jev.py --backend hf | llm: vLLM + ops/serve_llm_decision.py
@@ -79,7 +79,7 @@ for i in $(seq 1 90); do
 done
 $PY -u -m bench --policy decision --models "$MODEL_NAME" --base-url "http://127.0.0.1:$PORT" \
     --episodes "$EPISODES" --workers "$WORKERS" --seed "$SEED" --rounds 40 --base-port $BP --out "$OUT" \
-    --obs_encoding compact --prompt "$PROMPT" --env "$ENV" --decision-schema "$SCHEMA" \
+    --obs_encoding compact ${PROMPT:+--prompt "$PROMPT"} --env "$ENV" --decision-schema "$SCHEMA" \
     > "$OUT/bench.log" 2>&1
 echo "    bench exit=$?  server: $(curl -s http://127.0.0.1:$PORT/health)"
 grep -E "Error|error" "$OUT/bench.log" | head -5

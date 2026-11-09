@@ -17,7 +17,21 @@ PINNED = {
     ("minimal_v6_1", False, "hermes"): "f21e32411c65",
     ("minimal_v6_1", True, "typed"): "75d19adf7b8a",
     ("minimal_v6_1", True, "hermes"): "6952078619b6",
+    ("minimal_v7", False, "typed"): "6992cc02aa02",     # the Oct 2026 study benchmark
+    ("minimal_v7", False, "hermes"): "fb7ba002622b",
+    ("minimal_v7", True, "typed"): "5d5baf8a76f6",
+    ("minimal_v7", True, "hermes"): "cf09013159c5",
 }
+
+# What the benchmark and RL get when they name no pack. Changing it is a decision, not a refactor:
+# every comparison between RL and benchmark numbers assumes both ran this prompt.
+BENCHMARK_PROMPT_SHA = "6992cc02aa02"
+
+
+def test_default_pack_is_the_benchmark_prompt():
+    from cora.prompts import DEFAULT_PACK
+    assert prompt_sha(system_prompt(DEFAULT_PACK)) == BENCHMARK_PROMPT_SHA
+    assert prompt_sha(system_prompt()) == BENCHMARK_PROMPT_SHA
 
 
 @pytest.mark.parametrize("pack,manual,wire", sorted(PINNED))

@@ -5,7 +5,7 @@
 #   ops/run_benchmark.sh <prompt-pack> <model> [episodes] [-- extra python -m bench args]
 #
 # Examples
-#   ops/run_benchmark.sh minimal_v6_1 gpt-5-mini 5
+#   ops/run_benchmark.sh minimal_v7 gpt-5-mini 5
 #   ops/run_benchmark.sh my_prompt    gpt-5-mini 5 -- --base-url http://localhost:8080/v1 --api-key x
 #   ops/run_benchmark.sh minimal_v6   gpt-5.5 10                  # reproduce the Sep 2026 prompt
 #

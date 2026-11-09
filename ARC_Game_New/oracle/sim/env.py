@@ -15,9 +15,14 @@ The state handed out is oracle.sim.export.game_state (Unity's get_game_state pay
 is cora.actions.enumerate_actions on it, task answers go through sim.answer and menu actions
 through sim.apply_menu_action, and a step ends at the next decision (sim.step) -- the same
 decision points, 36 a game, as the headless build.
+
+study_rules=True (or CORA_STUDY_RULES=1 in the environment, for every SimEnv a run builds) plays
+the rules of the GUI build the human study ran on instead of the headless build's; see
+sim.new_world.
 """
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, List, Optional
 
 from cora import actions as _menu
@@ -43,10 +48,13 @@ def _flood_map() -> FloodMap:
 
 class SimEnv:
     def __init__(self, seed: Optional[int] = None, max_episode_steps: int = 100,
-                 manual_transfers: bool = True, skip_end_of_day: bool = True, **_ignored):
+                 manual_transfers: bool = True, skip_end_of_day: bool = True,
+                 study_rules: Optional[bool] = None, **_ignored):
         """seed: the Unity seed to play (-seed / ARC_SEED); reset(seed) overrides it.
         Unity-only GameEnv options (exe path, port, logs, frame capture) are accepted and ignored."""
         self.seed_value = seed
+        self.study_rules = (os.environ.get("CORA_STUDY_RULES", "0") not in ("", "0")
+                            if study_rules is None else bool(study_rules))
         self.max_episode_steps = max_episode_steps
         self.manual_transfers = manual_transfers
         self.skip_end_of_day = skip_end_of_day       # GameEnv's: roll through the end-of-day stop
@@ -84,7 +92,8 @@ class SimEnv:
         if self.seed_value is None:
             raise ValueError("SimEnv needs a seed (the surrogate has no unseeded mode)")
         self.active_seed = int(self.seed_value)
-        self.world = S.new_world(game_start(self.active_seed).get_state(), self._fmap)
+        self.world = S.new_world(game_start(self.active_seed).get_state(), self._fmap,
+                                 study_rules=self.study_rules)
         self.current_step = 0
         self._read_state()
         sab = self.game_state["satisfactionAndBudget"]

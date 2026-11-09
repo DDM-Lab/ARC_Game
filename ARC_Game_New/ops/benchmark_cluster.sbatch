@@ -63,12 +63,12 @@ mkdir -p "$OUT"
 # HISTORY: turns of prior conversation replayed. Each turn adds ~950 prompt tokens, so
 #   h=1 ~3.6k, h=4 ~6.4k, h=16 ~18k, h=32 ~33k -> raise MAX_MODEL_LEN past h=4.
 # TRANSFERS: task_only suppresses standalone transfers (human-faithful); manual enumerates them.
-# PROMPT: prompt pack name or path (default minimal_v6_1; see prompts/). ABLATE: rule ablation spec.
+# PROMPT: prompt pack name or path (default: cora.prompts.DEFAULT_PACK, the benchmark prompt; see prompts/). ABLATE: rule ablation spec.
 # SEED: base seed; episode i uses SEED+i, so arms see identical scenarios.
 # ENV: unity (default) or sim -- sim plays the surrogate (oracle.sim) instead of the headless build.
 # MAP_CONFIG: map JSON path for every episode, or "none" for the built-in layout (default: the
 #   build's bundled map_config.json). Each episode record carries the map fingerprint it ran.
-FMT=(--obs_encoding compact --prompt "${PROMPT:-minimal_v6_1}" ${ABLATE:+--ablate "$ABLATE"}
+FMT=(--obs_encoding compact ${PROMPT:+--prompt "$PROMPT"} ${ABLATE:+--ablate "$ABLATE"}
      --image_mode none --transfers "${TRANSFERS:-task_only}" --history "${HISTORY:-1}")
 
 echo "=== CORA benchmark  mode=$MODE  job=${SLURM_JOB_ID:-local}  node=$(hostname)  $(date)"

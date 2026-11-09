@@ -38,6 +38,7 @@ from __future__ import annotations
 from .clients import ClientTracker
 from .economy import C as _ECON_C, Economy
 from .flood import FloodState, update_flood
+from .flood_study import StudyFloodState, update_flood_study
 from .floodmap import FloodMap
 from . import roads
 from .tasks import Task, TaskBoard, demand_of, VEHICLE_CAPACITY
@@ -163,7 +164,7 @@ class World:
                  "round_index", "_trigger_memory", "use_generation",
                  "pending_arrivals", "pending_removals", "_casework_live", "generated_specs", "_alerts_shown", "_pos_cache",
                  "_emergency_count", "_last_emergency_round", "_sourced_now", "_pop_loaded",
-                 "_food_reserved", "deferred_food", "food_amounts")
+                 "_food_reserved", "deferred_food", "food_amounts", "study_rules")
 
     def __init__(self, rng, weather, day=1, segment=0, flood=None, fmap=None,
                  facilities_for=None):
@@ -207,6 +208,7 @@ class World:
         self._pop_loaded = {}       # (task, qty, dest) -> [people aboard, per trip, load order]
         self._food_reserved = 0     # packs promised to orders not yet loaded
         self.round_index = 0
+        self.study_rules = False        # the study-1.0.2 GUI build's rules (new_world)
         self._trigger_memory = {}       # stateful triggers (FloodExpanded, BudgetDropped)
         self.pending_arrivals = []      # deliveries that landed LAST round, drawn this one
         # ClientRelocationHandler.pendingRelocations: population WALKS now, no vehicle.
@@ -506,6 +508,7 @@ class World:
         w._pos_cache = self._pos_cache
         w._last_emergency_round = self._last_emergency_round
         w.use_generation = self.use_generation
+        w.study_rules = self.study_rules
         # REBIND CALLBACKS TO THE CLONE. TaskBoard holds bound methods of the World that
         # created it (retry_if_unsourced -> _can_source, cell_for, has_supplier) and the
         # World holds facilities_for; copied by reference they keep pointing at the
@@ -523,15 +526,32 @@ class World:
         return w
 
 
-def new_world(state, fmap=None, weather=None) -> World:
+def new_world(state, fmap=None, weather=None, study_rules=False) -> World:
     """A fresh game at its first decision, from the RNG state Unity starts it with
     (rng.game_start(seed), or a capture's logged state). Day 1's weather comes from the
-    parameter sheet (initialState.weather)."""
+    parameter sheet (initialState.weather).
+
+    study_rules: the rules of the GUI build the human study ran on (tag
+    v1.0.2-study-2026-10-12) instead of the headless bench build's. Three differences, each
+    measured by replaying the 50 human games (analysis/critic_parity/parity_report.md):
+      * the flood iterates its HashSets unsorted (flood_study.StudyFloodState);
+      * FindFacilityByName and FindTriggeringFacility are the pre-fix substring match
+        (EXACT_FACILITY_NAMES ignored; sim._unity_find_facility, export._trigger);
+      * the GUI's new-game init charges the starting roster (5T+5U = $6,500) to the budget and
+        to the worker cost the score reads, which an env-driven game never does (economy.py,
+        RecordInitialWorkerImputedCost)."""
     from .rng import UnityRandom
     if weather is None:
         weather = (_ECON_C.get("initial_state") or {}).get("weather") or "Sunny"
-    w = World(rng=UnityRandom(state=state), weather=weather, fmap=fmap)
+    w = World(rng=UnityRandom(state=state), weather=weather, fmap=fmap,
+              flood=StudyFloodState() if study_rules else None)
     w.use_generation = True
+    if study_rules:
+        w.study_rules = True
+        e = w.economy
+        cost = e.free_trained * _ECON_C["trained_cost"] + e.free_untrained * _ECON_C["untrained_cost"]
+        e.spend(cost, "worker")
+        e.report.worker_requested(e, cost)
     return w
 
 
@@ -1663,7 +1683,7 @@ def _unity_find_facility(w, name):
     if not b or b.get("prebuilt") or b.get("site_id") is None or b.get("type") not in _UNITY_BUILDING_PREFIX:
         return name
     want = f"{_UNITY_BUILDING_PREFIX[b['type']]}_{b['site_id']}"
-    if EXACT_FACILITY_NAMES:
+    if EXACT_FACILITY_NAMES and not w.study_rules:
         return name if b.get("status") == "InUse" else None
     for c in w.economy.buildings[::-1]:
         if c.get("prebuilt") or c.get("site_id") is None or c.get("type") not in _UNITY_BUILDING_PREFIX:
@@ -1942,7 +1962,8 @@ def _day1_skip(w: World, marks, on_flood_enter) -> None:
     # update (uct 7018 s18: Vehicle 1 "stopped by flood" at f640 inside the update and
     # dispatched again at f650; the port kept it damaged).
     _before = set(w.flood.tiles)
-    update_flood(w.flood, w.fmap, w.rng.stream("flood", w.round_index), w.weather, RAIN_INTENSITY[w.weather], marks,
+    (update_flood_study if w.study_rules else update_flood)(
+        w.flood, w.fmap, w.rng.stream("flood", w.round_index), w.weather, RAIN_INTENSITY[w.weather], marks,
                  on_added=lambda tiles: _stop_flooded_vehicles(w, tiles),
                  on_removed=lambda tiles: _restore_vehicles(w))
     _end_of_day_waste(w)
@@ -2156,7 +2177,7 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     # update (uct 7018 s18: Vehicle 1 "stopped by flood" at f640 inside the update and
     # dispatched again at f650; the port kept it damaged).
     _before = set(w.flood.tiles)
-    update_flood(w.flood, w.fmap, w.rng.stream("flood", w.round_index), w.weather,
+    (update_flood_study if w.study_rules else update_flood)(w.flood, w.fmap, w.rng.stream("flood", w.round_index), w.weather,
                  RAIN_INTENSITY[w.weather], marks, on_added=lambda tiles: _stop_flooded_vehicles(w, tiles),
                  on_removed=lambda tiles: _restore_vehicles(w))
     if w.segment >= ROUNDS_PER_DAY:

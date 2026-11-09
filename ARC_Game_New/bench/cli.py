@@ -14,6 +14,7 @@ import argparse
 import json
 import os
 import queue
+import re
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -57,7 +58,13 @@ def parse_args(argv=None):
     ap.add_argument("--seed", type=int, default=None,
                     help="base seed; episode i plays seed+i, so two runs with one --seed play the same "
                          "scenarios (paired comparisons). Omit for unseeded games.")
+    ap.add_argument("--seeds", default=None,
+                    help="comma-separated seeds or a file with one per line; episode i plays the i-th seed "
+                         "(overrides --seed and --episodes)")
     ap.add_argument("--out", default="benchmark_results")
+    ap.add_argument("--resume", action="store_true",
+                    help="keep the finished games already in <out>/episodes.jsonl and play only the rest "
+                         "(a game that ended in an error is played again)")
     ap.add_argument("--validate", action="store_true")
     # prompt and observation
     ap.add_argument("--prompt", default=cora_prompts.DEFAULT_PACK,
@@ -149,6 +156,11 @@ def main(argv=None):
     if args.image_mode == "synthetic" and not Path(MAP_GRID_JSON).exists():
         sys.exit(f"Synthetic mode needs the tile grid: {MAP_GRID_JSON} (python -m bench.export_map_grid)")
 
+    seeds = None
+    if args.seeds:
+        src = open(args.seeds).read() if os.path.exists(args.seeds) else args.seeds
+        seeds = [int(x) for x in re.split(r"[,\s]+", src) if x.strip()]
+        args.episodes = len(seeds)
     outdir = Path(args.out); outdir.mkdir(parents=True, exist_ok=True)
     ulog_dir = outdir / "unity_logs"; ulog_dir.mkdir(exist_ok=True)
     local = None
@@ -161,7 +173,7 @@ def main(argv=None):
                     prompt=args.prompt, ablation=args.ablate, show_impacts=args.impacts,
                     manual_transfers=args.transfers == "manual", obs_encoding=args.obs_encoding,
                     history=args.history, image_mode=args.image_mode, temperature=args.temperature,
-                    local=local, decision_rules=not args.decision_no_rules, decision_schema=args.decision_schema, base_seed=args.seed, map_config=args.map_config, log_dir=str(ulog_dir),
+                    local=local, decision_rules=not args.decision_no_rules, decision_schema=args.decision_schema, base_seed=args.seed, seeds=seeds, map_config=args.map_config, log_dir=str(ulog_dir),
                     backend=args.env)
     port_pool = queue.Queue()
     for w in range(args.workers):
@@ -189,7 +201,22 @@ def main(argv=None):
 
     jsonl = outdir / "episodes.jsonl"
     records = []
+    if args.resume and jsonl.exists():
+        # a requeued job: keep the finished games (matched on model and episode index) and play the rest
+        for line in jsonl.read_text().splitlines():
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue    # a line cut off when the job was stopped
+            if not rec.get("error") and (rec.get("model"), rec.get("episode")) in set(jobs):
+                records.append(rec)
+        done = {(r.get("model"), r.get("episode")) for r in records}
+        jobs = [j for j in jobs if j not in done]
+        print(f"    resume: {len(records)} finished games kept, {len(jobs)} to play")
     with open(jsonl, "w") as fh, ThreadPoolExecutor(max_workers=args.workers) as ex:
+        for rec in records:
+            fh.write(json.dumps(rec) + "\n")
+        fh.flush()
         futs = {ex.submit(run_episode, model, ep, cfg, client, port_pool): (model, ep) for model, ep in jobs}
         for fut in as_completed(futs):
             model, ep = futs[fut]

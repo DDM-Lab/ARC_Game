@@ -4,14 +4,16 @@ Every system prompt a model is given comes from a JSON file in this folder. To t
 copy a pack, edit its text, and run the benchmark with it — no Python needed:
 
 ```bash
-cp prompts/minimal_v6_1.json prompts/my_prompt.json      # then edit the "sections"
+cp prompts/minimal_v7.json prompts/my_prompt.json      # then edit the "sections"
 ops/run_benchmark.sh my_prompt gpt-5-mini 5
 python -m cora.prompts my_prompt                          # print it exactly as the model sees it
 ```
 
 | Pack | What it is |
 |---|---|
-| `minimal_v6_1` | default. Game rules and how to call the action tools, no strategy; numbers come from the observation; unavailable choices are marked |
+| `minimal_v7` | **default** (`cora.prompts.DEFAULT_PACK`): the Oct 2026 study benchmark prompt (`prompt_sha 6992cc02aa02`, task_only/typed) and the RL prompt. Benchmark and RL scripts inherit it instead of naming a pack |
+| `minimal_v6_1` | Game rules and how to call the action tools, no strategy; numbers come from the observation; unavailable choices are marked |
+| `gui_manual_v1` | the GUI officers' game manual (`global_prompt.manual` of `config/continuous_all_officers_qwen_interagent.json`, verbatim) followed by the task-choice and action-tool rules of `minimal_v6_1`; used by an early RL control run (Nov 2026), not by the benchmark |
 | `minimal_v6` | the Sep 2026 benchmark prompt, with the hiring rule corrected (2026-10: hired workers arrive a few rounds later). The exact Sep 2026 text (`prompt_sha 09b23ffd5e31`) is at git tag `pre-cleanup-2026-10` |
 
 ## Format (schema_version 2)
